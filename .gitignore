@@ -1,0 +1,29 @@
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Vite build output
+dist/
+
+# Firebase local files
+.firebase/
+*.cache
+/src/firebase.ts
+
+# Local env files (don’t commit secrets!)
+.env
+.env.*
+!.env.example
+
+# Editor / OS stuff
+.DS_Store
+*.swp
+*.swo
+.vscode/
+.idea/
+
+# TypeScript
+*.tsbuildinfo
