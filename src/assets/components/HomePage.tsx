@@ -70,14 +70,12 @@ const HomePage = () => {
       </div>
 
       {/* Content */}
-      <div className="flex-grow-1 p-3">
+      <div className="flex-grow-1 overflow-hidden mt-4 mx-4 d-flex flex-column">
         <h5>Your Saved Volume Symbols</h5>
         {error && <div className="text-danger mb-2">{error}</div>}
-        {userSymbols.length === 0 ? (
-          <p>No saved symbols yet.</p>
-        ) : (
+        <div className="flex-grow-1 overflow-auto border rounded">
           <SymbolListItem symbols={userSymbols} onRemove={handleRemoveSymbol} />
-        )}
+        </div>
       </div>
 
       {/* Modal */}
@@ -92,7 +90,10 @@ const HomePage = () => {
                   <button type="button" className="btn-close" onClick={() => setShowPopup(false)}></button>
                 </div>
                 <div className="modal-body">
-                  <VolumeModal onAddSuccess={fetchSymbols} />
+                  <VolumeModal 
+                    onAddSuccess={fetchSymbols} 
+                    existingSymbols={new Set(userSymbols.map(s => s.symbol))}
+                  />
                 </div>
               </div>
             </div>

@@ -1,9 +1,11 @@
 import os
+import datetime
 import firebase_admin
 from firebase_admin import auth, firestore
 import smtplib
 from email.message import EmailMessage
 import yfinance as yf
+from email.mime.text import MIMEText 
 
 # Initialize Firebase
 firebase_admin.initialize_app()
@@ -16,19 +18,16 @@ SECRET_TOKEN = os.environ.get("SECRET_TOKEN")
 def get_volume_data(symbols):
     try:
         # Batch download all symbols at once
-        data = yf.download(symbols, period="5d", group_by='ticker', threads=True)
+        data = yf.download(symbols, period="2d", group_by='ticker', threads=True)
         volume_data = {}
         
         for symbol in symbols:
             try:
-                if len(symbols) == 1:
-                    vol_data = data['Volume']
-                else:
-                    vol_data = data[symbol]['Volume']
-                
+                vol_data = data[symbol]['Volume']
+
                 if len(vol_data) < 2:
                     continue
-                    
+                              
                 current_vol = vol_data.iloc[-1]
                 previous_vol = vol_data.iloc[-2]
                 
@@ -37,7 +36,7 @@ def get_volume_data(symbols):
                     volume_data[symbol] = {
                         'current_volume': int(current_vol),
                         'previous_volume': int(previous_vol),
-                        'ratio': round(ratio, 1)
+                        'ratio': ratio
                     }
             except:
                 continue
@@ -50,20 +49,38 @@ def send_alert_email(email, alert_symbols, volume_data):
     if not alert_symbols:
         return
     
-    body = "Volume Alert - The following symbols exhibit unusual trading activity, exceeding 130% of previous day volume:\n\n"
+    current_date = datetime.date.today().strftime("%m/%d/%Y")
+    
+    # 1. Build the HTML body content
+    html_body = f"""
+    <html>
+      <body>
+        <p>Volume Alert - These <b>{len(alert_symbols)}</b> symbols exhibit unusual trading activity, exceeding 125% of previous day volume:</p>
+        <br>
+    """
     
     for symbol in alert_symbols:
         data = volume_data[symbol]
-        body += f"{symbol}:\n"
-        body += f"  Current Volume: {data['current_volume']:,}\n"
-        body += f"  Previous Volume: {data['previous_volume']:,}\n"
-        body += f"  Ratio: {data['ratio']}%\n\n"
+        
+        html_body += f"""
+        <p><b>{symbol}</b>:</p>
+        <ul>
+          <li>Current Volume: {data['current_volume']:,}</li>
+          <li>Previous Volume: {data['previous_volume']:,}</li>
+          <li>Ratio: {data['ratio']:.1f}%</li>
+        </ul>
+        """
     
-    body += "\n\nViigla Team"
+    html_body += """
+        <br>
+        <p>Vigila Team</p>
+      </body>
+    </html>
+    """
     
-    msg = EmailMessage()
-    msg.set_content(body)
-    msg['Subject'] = f"Vigila Volume Alert - {len(alert_symbols)} Symbol(s)"
+    msg = MIMEText(html_body, 'html') 
+    
+    msg['Subject'] = f"Vigila High Volume Alert - {current_date}"
     msg['From'] = SENDER_EMAIL
     msg['To'] = email
 
@@ -85,9 +102,6 @@ def check_volume_alerts(request):
     page = auth.list_users()
     while page:
         for user in page.users:
-            if not user.email:
-                continue
-                
             try:
                 user_doc = db.collection('users').document(user.uid).get()
                 if not user_doc.exists:
@@ -97,7 +111,7 @@ def check_volume_alerts(request):
                 user_symbol_list = []
                 
                 for symbol_obj in volume_symbols:
-                    symbol = symbol_obj.get('symbol') if isinstance(symbol_obj, dict) else symbol_obj
+                    symbol = symbol_obj.get('symbol')
                     user_symbol_list.append(symbol)
                     all_symbols.add(symbol)
                 
@@ -114,7 +128,7 @@ def check_volume_alerts(request):
         
         # Send alerts to users
         for email, symbols in user_symbols_map.items():
-            alert_symbols = [s for s in symbols if volume_data.get(s, {}).get('ratio', 0) >= 10]
+            alert_symbols = [s for s in symbols if volume_data.get(s, {}).get('ratio', 0) >= 123]
             if alert_symbols:
                 send_alert_email(email, alert_symbols, volume_data)
     

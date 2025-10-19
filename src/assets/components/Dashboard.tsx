@@ -10,7 +10,7 @@ const Dashboard = () => {
   const [activeLink, setActiveLink] = useState('home')
 
   return (
-    <div className="d-flex">
+    <div className="d-flex vh-100">
       {/* Static Sidebar */}
       <div 
         className="bg-dark text-white vh-100 p-3 d-flex flex-column"
@@ -58,7 +58,7 @@ const Dashboard = () => {
       </div>
 
       {/* Main Content */}
-      <div className="flex-grow-1 p-4">
+      <div className="flex-grow-1">
         {activeLink === "home" && <HomePage />}
         {activeLink === "settings" && <></>} {/* blank for now */}
       </div>

@@ -3,10 +3,11 @@ import debounce from "lodash/debounce";
 import { addVolumeSymbols, type IndexSuggestion} from "../APIs/Firestore";
 
 interface VolumeModalProps {
-  onAddSuccess: () => void; // callback to notify parent
+  onAddSuccess: () => void;
+  existingSymbols: Set<string>; // Hash set of existing symbols
 }
 
-const VolumeModal = ({ onAddSuccess }: VolumeModalProps) => {
+const VolumeModal = ({ onAddSuccess, existingSymbols }: VolumeModalProps) => {
   const [query, setQuery] = useState("");
   const [suggestions, setSuggestions] = useState<IndexSuggestion[]>([]);
   const [loading, setLoading] = useState(false);
@@ -58,9 +59,8 @@ const VolumeModal = ({ onAddSuccess }: VolumeModalProps) => {
   }, [query, debouncedFetch]);
 
   const handleAddSymbol = (suggestion: IndexSuggestion) => {
-    if (!selectedSymbols.some((s) => s.symbol === suggestion.symbol)) {
-      setSelectedSymbols((prev) => [...prev, suggestion]);
-    }
+    setSelectedSymbols((prev) => [...prev, suggestion]);
+    existingSymbols.add(suggestion.symbol);
     setQuery("");
     setSuggestions([]);
     setIsFocused(true);
@@ -68,6 +68,7 @@ const VolumeModal = ({ onAddSuccess }: VolumeModalProps) => {
 
   const handleRemoveSymbolLocal = (symbol: string) => {
     setSelectedSymbols((prev) => prev.filter((s) => s.symbol !== symbol));
+    existingSymbols.delete(symbol)
   };
 
   const handleAddVolumeIndicator = async () => {
@@ -78,18 +79,17 @@ const VolumeModal = ({ onAddSuccess }: VolumeModalProps) => {
     setSaveSuccess(false);
 
     try {
-        // Pass the full IndexSuggestion objects instead of just the symbols
-        await addVolumeSymbols(selectedSymbols);
-        setSaveSuccess(true);
-        setSelectedSymbols([]);
+      await addVolumeSymbols(selectedSymbols);
+      setSaveSuccess(true);
+      setSelectedSymbols([]);
 
-        // Notify parent to reload list
-        onAddSuccess();
+      // Notify parent to reload list
+      onAddSuccess();
     } catch (err: any) {
-        setSaveError(err.message || "Failed to save symbols. Please try again.");
-        setSaveSuccess(false);
+      setSaveError(err.message || "Failed to save symbols. Please try again.");
+      setSaveSuccess(false);
     } finally {
-        setIsSaving(false);
+      setIsSaving(false);
     }
   };
 
@@ -99,23 +99,46 @@ const VolumeModal = ({ onAddSuccess }: VolumeModalProps) => {
       <label htmlFor="index-search" className="form-label">
         Search for a Financial Symbol
       </label>
-      <input
-        id="index-search"
-        type="text"
-        value={query}
-        onChange={(e) => setQuery(e.target.value)}
-        onFocus={() => {
-          setIsFocused(true);
-          setSaveSuccess(false);
-          setSaveError(null);
+      <div className="position-relative mb-3">
+    <input
+      id="index-search"
+      type="text"
+      value={query}
+      onChange={(e) => setQuery(e.target.value)}
+      onFocus={() => {
+        setIsFocused(true);
+        setSaveSuccess(false);
+        setSaveError(null);
+      }}
+      onBlur={() => setTimeout(() => setIsFocused(false), 200)}
+      placeholder="e.g., AAPL or Apple"
+      className="form-control"
+      autoComplete="off"
+      autoFocus
+      style={{ paddingRight: query ? '40px' : '12px' }}
+    />
+    {query && (
+      <button
+        type="button"
+        onClick={() => {
+          setQuery("");
+          setSuggestions([]);
         }}
-        onBlur={() => setTimeout(() => setIsFocused(false), 200)}
-        placeholder="e.g., AAPL or Apple"
-        className="form-control mb-3"
-        autoComplete="off"
-      />
+        aria-label="Clear input"
+        className="btn position-absolute top-50 end-0 translate-middle-y text-secondary"
+        style={{
+          maxWidth: '40px',
+          maxHeight: '40px',
+          fontSize: '20px',
+          lineHeight: '1',
+          textDecoration: 'none',
+        }}
+      >
+        ×
+      </button>
+    )}
+  </div>
 
-      {loading && <div className="form-text">Loading...</div>}
       {error && (
         <div className="text-danger mt-1" style={{ fontSize: "0.875em" }}>
           {error}
@@ -123,34 +146,49 @@ const VolumeModal = ({ onAddSuccess }: VolumeModalProps) => {
       )}
 
       {/* Suggestions List */}
-      {isFocused && suggestions.length > 0 && (
+      {isFocused && query.length >= 2 && (
         <div
           className="list-group position-absolute w-100"
           style={{ zIndex: 1000 }}
         >
-          {suggestions.slice(0, 3).map((suggestion) => (
-            <div
-              key={suggestion.symbol}
-              className="list-group-item list-group-item-action d-flex justify-content-between align-items-center text-start p-2"
-            >
-              <div>
-                <div className="fw-bold">{suggestion.name}</div>
-                <small className="text-muted">
-                  {suggestion.symbol} ({suggestion.exchange})
-                </small>
-              </div>
-              <button
-                type="button"
-                className="btn btn-sm btn-outline-primary"
-                onMouseDown={(e) => {
-                  e.preventDefault();
-                  handleAddSymbol(suggestion);
-                }}
-              >
-                +
-              </button>
+          {loading ? (
+            <div className="list-group-item text-muted p-2">
+              <small>Loading...</small>
             </div>
-          ))}
+          ) : suggestions.length > 0 ? (
+            suggestions.slice(0, 3).map((suggestion) => {
+              const isAlreadyAdded = existingSymbols.has(suggestion.symbol)
+              
+              return (
+                <div
+                  key={suggestion.symbol}
+                  className="list-group-item d-flex justify-content-between align-items-center text-start p-2"
+                >
+                  <div>
+                    <div className="fw-bold">{suggestion.name}</div>
+                    <small className="text-muted">
+                      {suggestion.symbol} ({suggestion.exchange})
+                    </small>
+                  </div>
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-outline-primary"
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      handleAddSymbol(suggestion);
+                    }}
+                    disabled={isAlreadyAdded}
+                  >
+                    {isAlreadyAdded ? "Added ✓" : "+"}
+                  </button>
+                </div>
+              );
+            })
+          ) : (
+            <div className="list-group-item text-muted p-2">
+              <small>No results found. Please use the ticker symbol(e.g., AAPL) instead of the company name.</small>
+            </div>
+          )}
         </div>
       )}
 
