@@ -27,3 +27,5 @@ dist/
 
 # TypeScript
 *.tsbuildinfo
+# Google Cloud Functions env vars
+gcf/.env.yaml

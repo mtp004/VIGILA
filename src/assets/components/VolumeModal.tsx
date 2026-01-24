@@ -9,7 +9,7 @@ interface VolumeModalProps {
 
 const VolumeModal = ({ onAddSuccess, existingSymbols }: VolumeModalProps) => {
   const [query, setQuery] = useState("");
-  const [suggestions, setSuggestions] = useState<IndexSuggestion[]>([]);
+  const [suggestions, setSuggestions] = useState<IndexSuggestion[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isFocused, setIsFocused] = useState(false);
@@ -23,7 +23,6 @@ const VolumeModal = ({ onAddSuccess, existingSymbols }: VolumeModalProps) => {
 
   const fetchIndexData = async (searchQuery: string) => {
     if (searchQuery.length < 2) {
-      setSuggestions([]);
       return;
     }
     setLoading(true);
@@ -45,7 +44,6 @@ const VolumeModal = ({ onAddSuccess, existingSymbols }: VolumeModalProps) => {
       setError(
         "Failed to fetch data. Please check your API key and network connection."
       );
-      console.error(err);
     } finally {
       setLoading(false);
     }
@@ -62,7 +60,7 @@ const VolumeModal = ({ onAddSuccess, existingSymbols }: VolumeModalProps) => {
     setSelectedSymbols((prev) => [...prev, suggestion]);
     existingSymbols.add(suggestion.symbol);
     setQuery("");
-    setSuggestions([]);
+    setSuggestions(null);
     setIsFocused(true);
   };
 
@@ -111,7 +109,7 @@ const VolumeModal = ({ onAddSuccess, existingSymbols }: VolumeModalProps) => {
         setSaveError(null);
       }}
       onBlur={() => setTimeout(() => setIsFocused(false), 200)}
-      placeholder="e.g., AAPL or Apple"
+      placeholder="e.g., AAPL"
       className="form-control"
       autoComplete="off"
       autoFocus
@@ -122,7 +120,7 @@ const VolumeModal = ({ onAddSuccess, existingSymbols }: VolumeModalProps) => {
         type="button"
         onClick={() => {
           setQuery("");
-          setSuggestions([]);
+          setSuggestions(null);
         }}
         aria-label="Clear input"
         className="btn position-absolute top-50 end-0 translate-middle-y text-secondary"
@@ -155,40 +153,41 @@ const VolumeModal = ({ onAddSuccess, existingSymbols }: VolumeModalProps) => {
             <div className="list-group-item text-muted p-2">
               <small>Loading...</small>
             </div>
-          ) : suggestions.length > 0 ? (
-            suggestions.slice(0, 3).map((suggestion) => {
-              const isAlreadyAdded = existingSymbols.has(suggestion.symbol)
-              
-              return (
-                <div
-                  key={suggestion.symbol}
-                  className="list-group-item d-flex justify-content-between align-items-center text-start p-2"
-                >
-                  <div>
-                    <div className="fw-bold">{suggestion.name}</div>
-                    <small className="text-muted">
-                      {suggestion.symbol} ({suggestion.exchange})
-                    </small>
-                  </div>
-                  <button
-                    type="button"
-                    className="btn btn-sm btn-outline-primary"
-                    onMouseDown={(e) => {
-                      e.preventDefault();
-                      handleAddSymbol(suggestion);
-                    }}
-                    disabled={isAlreadyAdded}
+          ) : suggestions ? (
+            suggestions.length > 0 ? (
+              suggestions.slice(0, 3).map((suggestion) => {
+                const isAlreadyAdded = existingSymbols.has(suggestion.symbol)
+                return (
+                  <div
+                    key={suggestion.symbol}
+                    className="list-group-item d-flex justify-content-between align-items-center text-start p-2"
                   >
-                    {isAlreadyAdded ? "Added ✓" : "+"}
-                  </button>
-                </div>
-              );
-            })
-          ) : (
-            <div className="list-group-item text-muted p-2">
-              <small>No results found. Please use the ticker symbol(e.g., AAPL) instead of the company name.</small>
-            </div>
-          )}
+                    <div>
+                      <div className="fw-bold">{suggestion.name}</div>
+                      <small className="text-muted">
+                        {suggestion.symbol} ({suggestion.exchange})
+                      </small>
+                    </div>
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-outline-primary"
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        handleAddSymbol(suggestion);
+                      }}
+                      disabled={isAlreadyAdded}
+                    >
+                      {isAlreadyAdded ? "Added ✓" : "+"}
+                    </button>
+                  </div>
+                );
+              })
+            ) : (
+              <div className="list-group-item text-muted p-2">
+                <small>No results found. Please use the ticker symbol(e.g., AAPL) instead of the company name.</small>
+              </div>
+            )
+          ) : null}
         </div>
       )}
 
