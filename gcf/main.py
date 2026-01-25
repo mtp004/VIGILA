@@ -32,17 +32,18 @@ def save_alerted_timestamp(user_uid, symbols, timestamp):
     except Exception as e:
         print(f"Error saving timestamps: {e}")
 
-def get_volume_data(symbols):
+def get_volume_and_price_data(symbols):
     try:
         # Batch download all symbols at once
         data = yf.download(symbols, period="3d", group_by='ticker', threads=True)
-        volume_data = {}
+        stock_data = {}
         
         for symbol in symbols:
             try:
                 vol_data = data[symbol]['Volume']
+                close_data = data[symbol]['Close']
 
-                if len(vol_data) < 3:
+                if len(vol_data) < 3 or len(close_data) < 3:
                     continue
 
                 # index 0 = today, 1 = yesterday, 2 = day before
@@ -51,16 +52,31 @@ def get_volume_data(symbols):
                     int(vol_data.iloc[-2]),
                     int(vol_data.iloc[-3])
                 ]
+                
+                prices = [
+                    float(close_data.iloc[-1]),
+                    float(close_data.iloc[-2]),
+                    float(close_data.iloc[-3])
+                ]
+                
+                # Calculate price changes
+                price_change_today = prices[0] - prices[1]
+                price_change_pct_today = (price_change_today / prices[1]) * 100
 
-                volume_data[symbol] = volumes
+                stock_data[symbol] = {
+                    'volumes': volumes,
+                    'prices': prices,
+                    'price_change_today': price_change_today,
+                    'price_change_pct_today': price_change_pct_today
+                }
             except:
                 continue
                 
-        return volume_data
+        return stock_data
     except:
         return {}
 
-def send_alert_email(email, user_uid, alert_symbols, yesterday_alert_symbols, volume_data):
+def send_alert_email(email, user_uid, alert_symbols, yesterday_alert_symbols, stock_data):
     if not alert_symbols:
         return
     
@@ -78,37 +94,48 @@ def send_alert_email(email, user_uid, alert_symbols, yesterday_alert_symbols, vo
     """
 
     for symbol in alert_symbols:
-        data = volume_data.get(symbol)
-        if not data or len(data) < 2:
+        data = stock_data.get(symbol)
+        if not data or len(data.get('volumes', [])) < 2:
             continue
         
+        vols = data['volumes']
+        prices = data['prices']
+        price_change = data['price_change_today']
+        price_change_pct = data['price_change_pct_today']
+        
+        # Color code based on price movement
+        price_color = "green" if price_change >= 0 else "red"
+        price_sign = "+" if price_change >= 0 else "-"
+        
         html_body += f"""
-        <p><b>{symbol}</b>:</p>
+        <p><b>{symbol}</b>: <span style="color: {price_color};">{price_sign}${abs(price_change):.2f} <b>({price_sign}{abs(price_change_pct):.1f}%)</b></span></p>
         <ul>
-          <li>Current Volume: {data[0]:,}</li>
-          <li>Previous Volume: {data[1]:,}</li>
-          <li>Ratio: {(100 * data[0] / data[1]):.1f}%</li>
+          <li>Current Volume: {vols[0]:,}</li>
+          <li>Previous Volume: {vols[1]:,}</li>
+          <li>Volume Ratio: {(100 * vols[0] / vols[1]):.1f}%</li>
         </ul>
         """
 
     if yesterday_alert_symbols:
         html_body += f"""
         <hr>
-        <p><b>{yesterday_name}'s Alert</b> - These <b>{len(yesterday_alert_symbols)}</b> symbols previously exceeded 125% of the day before's volume:</p>
+        <p><b>{yesterday_name}'s Alert</b> - These <b>{len(yesterday_alert_symbols)}</b> symbols previously exceeded 125% of the session before's volume:</p>
         <br>
         """
 
         for symbol in yesterday_alert_symbols:
-            data = volume_data.get(symbol)
-            if not data or len(data) < 3:
+            data = stock_data.get(symbol)
+            if not data or len(data.get('volumes', [])) < 3:
                 continue
+
+            vols = data['volumes']
 
             html_body += f"""
             <p><b>{symbol}</b>:</p>
             <ul>
-              <li>Previous Volume: {data[1]:,}</li>
-              <li>Day Before Volume: {data[2]:,}</li>
-              <li>Ratio: {(100 * data[1] / data[2]):.1f}%</li>
+              <li>Previous Volume: {vols[1]:,}</li>
+              <li>Day Before Volume: {vols[2]:,}</li>
+              <li>Volume Ratio: {(100 * vols[1] / vols[2]):.1f}%</li>
             </ul>
             """
 
@@ -139,7 +166,7 @@ def check_volume_alerts(request):
         return "Unauthorized", 401
 
     users_processed = 0
-    
+    vol_ratio_threshold = 123
     # Collect all unique symbols first
     all_symbols = set()
     user_symbols_map = {}
@@ -172,7 +199,7 @@ def check_volume_alerts(request):
     
     # Batch download all symbols once
     if all_symbols:
-        volume_data = get_volume_data(list(all_symbols))
+        stock_data = get_volume_and_price_data(list(all_symbols))
         
         # Send alerts to users
         today = datetime.date.today()
@@ -184,27 +211,27 @@ def check_volume_alerts(request):
             alert_symbols = []
             yesterday_alert_symbols = []
             for s in user_data['symbols']:
-                vols = volume_data.get(s)
-                if not vols or len(vols) < 3:
+                data = stock_data.get(s)
+                if not data or len(data.get('volumes', [])) < 3:
                     continue
 
+                vols = data['volumes']
                 today_vol = vols[0]
                 yesterday_vol = vols[1]
                 day_before = vols[2]
 
                 ratio = (today_vol / yesterday_vol) * 100
-
                 previous_ratio = (yesterday_vol / day_before) * 100
                 
                 # Check timestamp for whether there are any new volume spike that has not been alerted today or not
-                if ratio >= 123:
+                if ratio >= vol_ratio_threshold:
                     alert_symbols.append(s)
                     last_timestamp = alert_timestamps.get(s)
                     if not last_timestamp or last_timestamp.date() < today:
                         should_alert = True
-                if previous_ratio >= 123:
+                if previous_ratio >= vol_ratio_threshold:
                     yesterday_alert_symbols.append(s)
             if alert_symbols and should_alert:
-                send_alert_email(email, user_data['uid'], alert_symbols, yesterday_alert_symbols, volume_data)
+                send_alert_email(email, user_data['uid'], alert_symbols, yesterday_alert_symbols, stock_data)
     
     return f"Processed {users_processed} users", 200
