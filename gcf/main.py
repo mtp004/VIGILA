@@ -1,4 +1,5 @@
 import os
+import pytz
 import datetime
 import firebase_admin
 from firebase_admin import auth, firestore
@@ -10,6 +11,7 @@ from email.mime.text import MIMEText
 # Initialize Firebase
 firebase_admin.initialize_app()
 db = firestore.client()
+ny_tz = pytz.timezone('America/New_York')
 
 SENDER_EMAIL = os.environ.get("SENDER_EMAIL")
 APP_PASSWORD = os.environ.get("APP_PASSWORD")
@@ -23,14 +25,16 @@ def save_alerted_timestamp(user_uid, symbols, timestamp):
     try:
         user_doc_ref = db.collection('users').document(user_uid)
         
-        # Build the update dict for all symbols at once
-        updates = {symbol: timestamp for symbol in symbols}
+        updates = {f'volume_alert_timestamps.{symbol}': timestamp for symbol in symbols}
         
+        user_doc_ref.update(updates)
+    except Exception as e:
+        # If update fails (e.g., field doesn't exist), use set with merge
+        print(f"Update failed, trying set: {e}")
+        updates = {symbol: timestamp for symbol in symbols}
         user_doc_ref.set({
             'volume_alert_timestamps': updates
         }, merge=True)
-    except Exception as e:
-        print(f"Error saving timestamps: {e}")
 
 def get_volume_and_price_data(symbols):
     try:
@@ -157,7 +161,7 @@ def send_alert_email(email, user_uid, alert_symbols, yesterday_alert_symbols, st
         smtp.login(SENDER_EMAIL, APP_PASSWORD)
         smtp.send_message(msg)
     
-    alert_timestamp = datetime.datetime.now(datetime.timezone.utc)
+    alert_timestamp = datetime.datetime.now(ny_tz)
     save_alerted_timestamp(user_uid, alert_symbols, alert_timestamp)
 
 def check_volume_alerts(request):
@@ -202,7 +206,8 @@ def check_volume_alerts(request):
         stock_data = get_volume_and_price_data(list(all_symbols))
         
         # Send alerts to users
-        today = datetime.date.today()
+        today = datetime.datetime.now(ny_tz).date()
+
         for email, user_data in user_symbols_map.items():
             user_doc = db.collection('users').document(user_data['uid']).get()
             alert_timestamps = user_doc.to_dict().get('volume_alert_timestamps', {}) if user_doc.exists else {}
@@ -227,7 +232,7 @@ def check_volume_alerts(request):
                 if ratio >= vol_ratio_threshold:
                     alert_symbols.append(s)
                     last_timestamp = alert_timestamps.get(s)
-                    if not last_timestamp or last_timestamp.date() < today:
+                    if not last_timestamp or last_timestamp.astimezone(ny_tz).date() < today:
                         should_alert = True
                 if previous_ratio >= vol_ratio_threshold:
                     yesterday_alert_symbols.append(s)
