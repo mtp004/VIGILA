@@ -99,7 +99,7 @@ def send_alert_email(email, user_uid, alert_symbols, yesterday_alert_symbols, st
 
     for symbol in alert_symbols:
         data = stock_data.get(symbol)
-        if not data or len(data.get('volumes', [])) < 2:
+        if not data:
             continue
         
         vols = data['volumes']
