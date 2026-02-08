@@ -15,7 +15,6 @@ ny_tz = pytz.timezone('America/New_York')
 
 SENDER_EMAIL = os.environ.get("SENDER_EMAIL")
 APP_PASSWORD = os.environ.get("APP_PASSWORD")
-SECRET_TOKEN = os.environ.get("SECRET_TOKEN")
 
 def save_alerted_timestamp(user_uid, symbols, timestamp):
     """
@@ -165,10 +164,6 @@ def send_alert_email(email, user_uid, alert_symbols, yesterday_alert_symbols, st
     save_alerted_timestamp(user_uid, alert_symbols, alert_timestamp)
 
 def check_volume_alerts(request):
-    token = request.args.get("token")
-    if token != SECRET_TOKEN:
-        return "Unauthorized", 401
-
     users_processed = 0
     vol_ratio_threshold = 123
     # Collect all unique symbols first
