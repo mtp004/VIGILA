@@ -119,7 +119,7 @@ def get_volume_and_price_data(symbols):
 
 
 def send_alert_email(email, user_uid, alert_symbols, yesterday_alert_symbols, stock_data, today_str, last_session_str):
-    if not alert_symbols and not yesterday_alert_symbols:
+    if not alert_symbols:
         return
 
     today = datetime.date.today()
@@ -274,7 +274,7 @@ def check_volume_alerts(request):
             if previous_ratio >= vol_ratio_threshold and s not in alert_symbols:
                 yesterday_alert_symbols.append(s)
 
-        if (alert_symbols and should_alert) or yesterday_alert_symbols:
+        if alert_symbols and should_alert:
             send_alert_email(
                 email, user_data['uid'],
                 alert_symbols, yesterday_alert_symbols,
