@@ -1,4 +1,3 @@
-// src/firebase/firestore.ts
 import { db, auth } from "../../firebase";
 import { doc, getDoc, setDoc, updateDoc, arrayUnion, arrayRemove } from "firebase/firestore";
 
@@ -19,15 +18,13 @@ export const addVolumeSymbols = async (symbols: IndexSuggestion[]) => {
 
   const userDocRef = doc(db, "users", user.uid);
 
-  // Ensure the document exists
   const snap = await getDoc(userDocRef);
   if (!snap.exists()) {
-    await setDoc(userDocRef, { indicators: { Volume: [] } });
+    await setDoc(userDocRef, { indicators: { Volume: { symbols: [] } } });
   }
 
-  // Append objects without overwriting
   await updateDoc(userDocRef, {
-    "indicators.Volume": arrayUnion(...symbols),
+    "indicators.Volume.symbols": arrayUnion(...symbols),
   });
 };
 
@@ -41,7 +38,7 @@ export const removeVolumeSymbol = async (symbolObj: IndexSuggestion) => {
   const userDocRef = doc(db, "users", user.uid);
 
   await updateDoc(userDocRef, {
-    "indicators.Volume": arrayRemove(symbolObj),
+    "indicators.Volume.symbols": arrayRemove(symbolObj),
   });
 };
 
@@ -57,7 +54,7 @@ export const fetchUserVolumeSymbols = async (): Promise<IndexSuggestion[]> => {
     const snap = await getDoc(userDocRef);
     if (snap.exists()) {
       const data = snap.data();
-      return data?.indicators?.Volume || [];
+      return data?.indicators?.Volume?.symbols || [];
     } else {
       return [];
     }
