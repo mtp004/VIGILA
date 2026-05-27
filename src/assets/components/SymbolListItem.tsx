@@ -1,6 +1,6 @@
 // src/components/VolumeSymbolList.tsx
 import React from "react";
-import { type IndexSuggestion } from "../APIs/Firestore";
+import { type IndexSuggestion } from "../APIs/StockFirestore";
 
 interface SymbolListItemProps {
   symbols: IndexSuggestion[];

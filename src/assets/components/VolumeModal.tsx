@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import debounce from "lodash/debounce";
-import { addVolumeSymbols, type IndexSuggestion} from "../APIs/Firestore";
+import { addVolumeSymbols, type IndexSuggestion} from "../APIs/StockFirestore";
 
 interface VolumeModalProps {
   onAddSuccess: () => void;

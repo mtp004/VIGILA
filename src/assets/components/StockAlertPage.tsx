@@ -1,7 +1,7 @@
 import { useState } from "react";
 import VolumeModal from "./VolumeModal";
 import SymbolListItem from "./SymbolListItem";
-import { type IndexSuggestion } from "../APIs/Firestore";
+import { type IndexSuggestion } from "../APIs/StockFirestore";
 
 interface HomePageProps {
   userSymbols: IndexSuggestion[];
@@ -10,7 +10,7 @@ interface HomePageProps {
   error: string | null;
 }
 
-const HomePage = ({ userSymbols, onRemoveSymbol, onAddSuccess, error }: HomePageProps) => {
+const StockAlertPage = ({ userSymbols, onRemoveSymbol, onAddSuccess, error }: HomePageProps) => {
   const [showPopup, setShowPopup] = useState(false);
 
   return (
@@ -63,4 +63,4 @@ const HomePage = ({ userSymbols, onRemoveSymbol, onAddSuccess, error }: HomePage
   );
 };
 
-export default HomePage;
+export default StockAlertPage;

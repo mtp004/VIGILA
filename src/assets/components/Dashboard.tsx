@@ -1,10 +1,11 @@
 import { auth } from '../../firebase'
 import { signOut } from 'firebase/auth'
 import { useState, useEffect } from 'react'
-import HomePage from './HomePage';
+import StockAlertPage from './StockAlertPage';
 import 'bootstrap/dist/css/bootstrap.min.css';
 import 'bootstrap/dist/js/bootstrap.bundle.min.js';
-import { fetchUserVolumeSymbols, removeVolumeSymbol, type IndexSuggestion } from '../APIs/Firestore';
+import { fetchUserVolumeSymbols, removeVolumeSymbol, type IndexSuggestion } from '../APIs/StockFirestore';
+import GiftCardAlertPage from './GiftcardAlertPage';
 
 const Dashboard = () => {
   const user = auth.currentUser
@@ -46,6 +47,10 @@ const Dashboard = () => {
               href="#" onClick={() => setActiveLink('home')}>Home</a>
           </li>
           <li className="nav-item">
+            <a className={`nav-link p-2 mb-2 rounded ${activeLink === 'giftcards' ? 'bg-white text-dark' : 'text-white'}`}  
+              href="#" onClick={() => setActiveLink('giftcards')}>Gift card alerts</a>
+          </li>
+          <li className="nav-item">
             <a className={`nav-link p-2 mb-2 rounded ${activeLink === 'settings' ? 'bg-white text-dark' : 'text-white'}`}
               href="#" onClick={() => setActiveLink('settings')}>Settings</a>
           </li>
@@ -56,14 +61,15 @@ const Dashboard = () => {
       </div>
 
       <div className="flex-grow-1">
-        {activeLink === "home" && (
-          <HomePage
+        {activeLink === "Stocks" && (
+          <StockAlertPage
             userSymbols={userSymbols}
             onRemoveSymbol={handleRemoveSymbol}
             onAddSuccess={fetchSymbols}
             error={symbolsError}
           />
         )}
+        {activeLink === "giftcards" && <GiftCardAlertPage />}
         {activeLink === "settings" && <></>}
       </div>
     </div>
