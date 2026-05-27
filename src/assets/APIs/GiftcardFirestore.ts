@@ -9,10 +9,7 @@ import {
   serverTimestamp,
   Timestamp,
 } from "firebase/firestore";
-import {type WithFieldValue } from "firebase/firestore";
-
-
-// ─── Types ────────────────────────────────────────────────────────────────────
+import { type WithFieldValue } from "firebase/firestore";
 
 export interface GiftCardAlert {
   id: string;
@@ -37,8 +34,6 @@ export interface AlertFormData {
   urls: { gcx: string; cardcash: string; carddepot: string };
 }
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
 function alertsRef(userId: string) {
   return collection(db, "users", userId, "giftcard_alerts");
 }
@@ -52,8 +47,6 @@ function requireUser() {
   if (!user) throw new Error("User not authenticated");
   return user;
 }
-
-// ─── CRUD ─────────────────────────────────────────────────────────────────────
 
 export const createAlert = async (data: AlertFormData): Promise<string> => {
   const user = requireUser();
