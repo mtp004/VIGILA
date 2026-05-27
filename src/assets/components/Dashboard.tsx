@@ -9,7 +9,8 @@ import GiftCardAlertPage from './GiftcardAlertPage';
 
 const Dashboard = () => {
   const user = auth.currentUser
-  const [activeLink, setActiveLink] = useState('home')
+  // 1. Initialize with 'stocks' so the page loads with content immediately
+  const [activeLink, setActiveLink] = useState('stocks')
   const [userSymbols, setUserSymbols] = useState<IndexSuggestion[]>([]);
   const [symbolsError, setSymbolsError] = useState<string | null>(null);
 
@@ -43,8 +44,9 @@ const Dashboard = () => {
         <hr className="bg-light my-2" />
         <ul className="nav flex-column mb-auto">
           <li className="nav-item">
-            <a className={`nav-link p-2 mb-2 rounded ${activeLink === 'home' ? 'bg-white text-dark' : 'text-white'}`}
-              href="#" onClick={() => setActiveLink('home')}>Home</a>
+            {/* 2. Checked activeLink against 'stocks' here */}
+            <a className={`nav-link p-2 mb-2 rounded ${activeLink === 'stocks' ? 'bg-white text-dark' : 'text-white'}`}
+              href="#" onClick={() => setActiveLink('stocks')}>Stocks</a>
           </li>
           <li className="nav-item">
             <a className={`nav-link p-2 mb-2 rounded ${activeLink === 'giftcards' ? 'bg-white text-dark' : 'text-white'}`}  
@@ -61,7 +63,7 @@ const Dashboard = () => {
       </div>
 
       <div className="flex-grow-1">
-        {activeLink === "Stocks" && (
+        {activeLink === "stocks" && (
           <StockAlertPage
             userSymbols={userSymbols}
             onRemoveSymbol={handleRemoveSymbol}

@@ -40,11 +40,11 @@ export interface AlertFormData {
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function alertsRef(userId: string) {
-  return collection(db, "users", userId, "alerts");
+  return collection(db, "users", userId, "giftcard_alerts");
 }
 
 function alertDoc(userId: string, alertId: string) {
-  return doc(db, "users", userId, "alerts", alertId);
+  return doc(db, "users", userId, "giftcard_alerts", alertId);
 }
 
 function requireUser() {
