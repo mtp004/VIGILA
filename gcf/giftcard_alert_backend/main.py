@@ -17,17 +17,35 @@ APP_PASSWORD = os.environ.get("APP_PASSWORD")
 app = FastAPI()
 
 
-def send_giftcard_email(to_email: str, html_snippets: list[str]) -> bool:
+def send_giftcard_email(to_email: str, alert_reports: list[dict]) -> bool:
     if not to_email or not SENDER_EMAIL or not APP_PASSWORD:
         return False
         
-    html_body = "<h2>Your Vigila Giftcard Alerts</h2>"
-    html_body += "<p>The following brands have gift cards meeting your target discount thresholds:</p>"
-    html_body += "".join(html_snippets)
+    # 1. Extract unique brand names for the subject line
+    unique_brands = sorted(list(set(report["brand"] for report in alert_reports)))
+    brands_string = ", ".join(unique_brands)
+    subject = f"Vigila Giftcard Alert: {brands_string}"
+    
+    # 2. Build the HTML body directly from the metadata structures
+    html_snippets = []
+    for report in alert_reports:
+        brand_header = f"<h3>{report['brand'].upper()} (Target: {report['min_discount']}%, Limits: ${report['min_val']} - ${report['max_val']})</h3>"
+        html_snippets.append(brand_header)
+        
+        for site, cards_list in report["platform_groups"].items():
+            platform_html = f"<p style='margin-bottom: 5px; margin-left: 20px;'><b>{site}:</b></p>"
+            platform_html += "<ul style='margin-top: 5px; margin-left: 40px;'>"
+            for c in cards_list:
+                platform_html += f"<li>${c['face_value']} GC for <b>${c['sale_price']}</b> ({c['discount_pct']}% OFF)</li>"
+            platform_html += "</ul>"
+            html_snippets.append(platform_html)
+            
+    html_body = "".join(html_snippets)
     html_body += "<br><p>Happy Savings,<br>Vigila Team</p>"
     
+    # 3. Package and dispatch the email message
     msg = MIMEText(html_body, 'html')
-    msg['Subject'] = "Vigila - Giftcard Targets Reached!"
+    msg['Subject'] = subject
     msg['From'] = SENDER_EMAIL
     msg['To'] = to_email
 
@@ -44,6 +62,7 @@ def send_giftcard_email(to_email: str, html_snippets: list[str]) -> bool:
 @app.post("/run-giftcard-alerts")
 async def trigger_giftcard_alerts():
     try:
+        print("\n--- STARTING GIFT CARD ALERT RUN ---")
         alerts_query = db.collection_group("giftcard_alerts").stream()
         
         brand_user_alerts = {}
@@ -54,7 +73,7 @@ async def trigger_giftcard_alerts():
             if not data.get("isActive", True):
                 continue
                 
-            brand = data.get("brand", "").lower()
+            brand = data.get("brand", "")
             if not brand:
                 continue
                 
@@ -72,6 +91,7 @@ async def trigger_giftcard_alerts():
             brand_user_alerts[brand][uid][alert_id] = data
 
         if not brand_user_alerts:
+            print("[DEBUG] No active alerts found in database.")
             return {"status": "success", "message": "No active alerts to process."}
 
         all_urls = set()
@@ -83,6 +103,7 @@ async def trigger_giftcard_alerts():
                         if url:
                             all_urls.add(url)
 
+        print(f"[DEBUG] Dispatching scraper for URLs: {list(all_urls)}")
         scraped_results = await run_orchestrator(list(all_urls))
 
         scraped_by_brand = {}
@@ -92,12 +113,14 @@ async def trigger_giftcard_alerts():
             if b not in scraped_by_brand:
                 scraped_by_brand[b] = {}
             scraped_by_brand[b][w] = res["discounts"]
+            print(f"[DEBUG] Scraper output mapped for Brand: '{b}', Website Key: '{w}' (Found {len(res['discounts'])} cards)")
 
         emails_to_send = {}
         updates_batch = db.batch()
 
         for brand, users_dict in brand_user_alerts.items():
             brand_results = scraped_by_brand.get(brand, {})
+            print(f"\n[DEBUG] Processing evaluation loop for Brand: '{brand}'")
             
             for uid, alerts_map in users_dict.items():
                 for alert_id, alert_data in alerts_map.items():
@@ -105,12 +128,21 @@ async def trigger_giftcard_alerts():
                     min_val = float(alert_data.get("minCardValue", 0))
                     max_val = float(alert_data.get("maxCardValue", 999999))
                     platforms_toggle = alert_data.get("platforms", {})
+
+                    previously_satisfied = set(alert_data.get("satisfied_by", []))
+                    print(f"  -> Alert ID: {alert_id} for User: {uid}")
+                    print(f"     Criteria: min_discount={min_discount}%, range=[${min_val}, ${max_val}]")
+                    print(f"     Allowed platforms toggle: {platforms_toggle}")
+                    print(f"     Previously satisfied in DB: {previously_satisfied}")
                     
                     triggered_cards = []
                     satisfied_platforms = set()
                     
                     for website, cards in brand_results.items():
-                        if not platforms_toggle.get(website, True):
+                        is_allowed = platforms_toggle.get(website, True)
+                        print(f"     Checking scraper website key: '{website}' | Allowed by toggle? {is_allowed}")
+                        
+                        if not is_allowed:
                             continue
                             
                         for card in cards:
@@ -121,49 +153,60 @@ async def trigger_giftcard_alerts():
                                 triggered_cards.append({**card, "website": website})
                                 satisfied_platforms.add(website)
                                 
+                    print(f"     Currently satisfied this run: {satisfied_platforms}")
+                    
                     doc_ref = db.collection("users").document(uid).collection("giftcard_alerts").document(alert_id)
                     updates_batch.update(doc_ref, {
                         "lastCheckedAt": firestore.SERVER_TIMESTAMP,
                         "satisfied_by": list(satisfied_platforms)
                     })
-                                
-                    if triggered_cards:
-                        triggered_cards.sort(key=lambda x: x["discount_pct"], reverse=True)
+
+                    newly_satisfied = satisfied_platforms - previously_satisfied
+                    newly_triggered_cards = [c for c in triggered_cards if c["website"] in newly_satisfied]
+                    
+                    print(f"     Set math result (newly_satisfied): {newly_satisfied}")
+                    print(f"     Number of cards in newly_triggered_cards: {len(newly_triggered_cards)}")
+
+                    if newly_triggered_cards:
+                        newly_triggered_cards.sort(key=lambda x: x["discount_pct"], reverse=True)
                         
                         if uid not in emails_to_send:
                             emails_to_send[uid] = []
                             
-                        # Build header with boundaries included
-                        snippet = f"<h3>{brand.upper()} (Target: {min_discount}%, Limits: ${min_val} - ${max_val})</h3>"
-                        
-                        # Group the matching cards by their website platform
+                        # Group the matching cards by their website platform name string
                         platform_groups = {}
-                        for c in triggered_cards[:10]:  # Upbed to top 10 total offers
-                            site = c['website'].upper()
+                        for c in newly_triggered_cards[:10]:
+                            site = c['website']
                             if site not in platform_groups:
                                 platform_groups[site] = []
                             platform_groups[site].append(c)
                             
-                        # Append the grouped items to the email layout string
-                        for site, cards_list in platform_groups.items():
-                            snippet += f"<p style='margin-bottom: 5px;'><b>{site}:</b></p><ul style='margin-top: 5px;'>"
-                            for c in cards_list:
-                                snippet += f"<li>${c['face_value']} GC for <b>${c['sale_price']}</b> ({c['discount_pct']}% OFF)</li>"
-                            snippet += "</ul>"
+                        # Package raw metadata structures into the queue tracking array
+                        report_metadata = {
+                            "brand": brand,
+                            "min_discount": min_discount,
+                            "min_val": min_val,
+                            "max_val": max_val,
+                            "platform_groups": platform_groups
+                        }
                         
-                        emails_to_send[uid].append(snippet)
+                        emails_to_send[uid].append(report_metadata)
+                    else:
+                        print("     [SKIP] No email snippet built (No new platforms crossed threshold).")
 
         updates_batch.commit()
 
         users_emailed = 0
-        for uid, snippets in emails_to_send.items():
+        for uid, alert_reports in emails_to_send.items():
             try:
                 user_record = auth.get_user(uid)
-                if send_giftcard_email(user_record.email, snippets):
+                # Pass the raw array of reporting objects directly into the email utility
+                if send_giftcard_email(user_record.email, alert_reports):
                     users_emailed += 1
             except Exception as e:
                 print(f"Failed to fetch or email user {uid}: {e}")
 
+        print(f"--- RUN FINISHED: Emailed {users_emailed} users ---\n")
         return {
             "status": "success",
             "brands_checked": len(brand_user_alerts),
