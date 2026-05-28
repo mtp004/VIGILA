@@ -410,10 +410,10 @@ const CreateGiftcardAlertModal = ({ onAddSuccess, onClose }: CreateAlertModalPro
   const isStep2Valid =
     Object.values(form.platforms).some(Boolean) &&
     Object.entries(form.platforms)
-      .filter(([, v]) => v)
+      .filter(([, isEnabled]) => isEnabled)
       .every(
         ([id]) =>
-          !form.urls[id as keyof typeof form.urls] ||
+          form.urls[id as keyof typeof form.urls]?.trim().length > 0 &&
           form.urls[id as keyof typeof form.urls].startsWith("http")
       );
 
