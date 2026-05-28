@@ -94,32 +94,28 @@ async def trigger_giftcard_alerts():
             print("[DEBUG] No active alerts found in database.")
             return {"status": "success", "message": "No active alerts to process."}
 
-        all_url_tasks = []
-        seen_urls = set()
-        for brand, users_dict in brand_user_alerts.items():
-            for uid, alerts_map in users_dict.items():
-                for alert_id, alert_data in alerts_map.items():
-                    for platform_name, url in alert_data.get("urls", {}).items():
-                        if url and url not in seen_urls:
-                            all_url_tasks.append((url, brand))
-                            seen_urls.add(url)
+        # Collect unique URLs
+        all_urls = list({
+            url
+            for users_dict in brand_user_alerts.values()
+            for alerts_map in users_dict.values()
+            for alert_data in alerts_map.values()
+            for url in alert_data.get("urls", {}).values()
+            if url
+        })
 
-        scraped_results = await run_orchestrator(all_url_tasks)
+        scraped_results = await run_orchestrator(all_urls)
 
-        scraped_by_brand = {}
+        # Store results by URL
+        url_results = {}
         for res in scraped_results:
-            b = res["brand"]
-            w = res["website"]
-            if b not in scraped_by_brand:
-                scraped_by_brand[b] = {}
-            scraped_by_brand[b][w] = res["discounts"]
-            print(f"[DEBUG] Scraper output mapped for Brand: '{b}', Website Key: '{w}' (Found {len(res['discounts'])} cards)")
+            url_results[res["url"]] = {"website": res["website"], "discounts": res["discounts"]}
+            print(f"[DEBUG] Scraped '{res['url']}' via {res['website']} (Found {len(res['discounts'])} cards)")
 
         emails_to_send = {}
         updates_batch = db.batch()
 
         for brand, users_dict in brand_user_alerts.items():
-            brand_results = scraped_by_brand.get(brand, {})
             print(f"\n[DEBUG] Processing evaluation loop for Brand: '{brand}'")
             
             for uid, alerts_map in users_dict.items():
@@ -137,18 +133,19 @@ async def trigger_giftcard_alerts():
                     
                     triggered_cards = []
                     satisfied_platforms = set()
-                    
-                    for website, cards in brand_results.items():
+
+                    for platform_name, url in alert_data.get("urls", {}).items():
+                        if not url or url not in url_results:
+                            continue
+                        result = url_results[url]
+                        website = result["website"]
                         is_allowed = platforms_toggle.get(website, True)
-                        print(f"     Checking scraper website key: '{website}' | Allowed by toggle? {is_allowed}")
-                        
+                        print(f"     Checking platform: '{website}' | Allowed? {is_allowed}")
                         if not is_allowed:
                             continue
-                            
-                        for card in cards:
+                        for card in result["discounts"]:
                             face = float(card.get("face_value", 0))
                             pct = float(card.get("discount_pct", 0))
-                            
                             if pct >= min_discount and min_val <= face <= max_val:
                                 triggered_cards.append({**card, "website": website})
                                 satisfied_platforms.add(website)
