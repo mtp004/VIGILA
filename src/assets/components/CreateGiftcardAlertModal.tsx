@@ -1,11 +1,12 @@
 import { useState } from "react";
-import { createAlert, type AlertFormData } from "../APIs/GiftcardFirestore";
+import { createAlert, updateAlert, type AlertFormData, type GiftCardAlert } from "../APIs/GiftcardFirestore";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface CreateAlertModalProps {
   onAddSuccess: () => void;
   onClose: () => void;
+  editingAlert?: GiftCardAlert | null;
 }
 
 interface FormData {
@@ -65,148 +66,31 @@ const StepIndicator = ({ current, total }: { current: number; total: number }) =
 
 // ─── Step 1: Brand ────────────────────────────────────────────────────────────
 
-const BRAND_SUGGESTIONS = [
-  "Nike",
-  "Amazon",
-  "Apple",
-  "Target",
-  "Walmart",
-  "Starbucks",
-  "Best Buy",
-  "Home Depot",
-  "Sephora",
-  "Uber",
-];
-
 interface Step1Props {
   brand: string;
   onChange: (brand: string) => void;
 }
 
-const Step1Brand = ({ brand, onChange }: Step1Props) => {
-  const [query, setQuery] = useState(brand);
-  const [showSuggestions, setShowSuggestions] = useState(false);
-
-  const filtered = BRAND_SUGGESTIONS.filter((s) =>
-    s.toLowerCase().includes(query.toLowerCase())
-  );
-
-  const selectBrand = (name: string) => {
-    setQuery(name);
-    onChange(name);
-    setShowSuggestions(false);
-  };
-
-  const handleInput = (val: string) => {
-    setQuery(val);
-    onChange(val);
-    setShowSuggestions(val.length > 0);
-  };
-
-  return (
-    <div>
-      <p className="text-muted mb-3" style={{ fontSize: 14 }}>
-        Enter the brand name you want to monitor for discounted gift cards.
-      </p>
-      <div className="mb-3">
-        <label className="form-label" style={{ fontSize: 13, fontWeight: 500 }}>
-          Brand name
-        </label>
-        <div className="position-relative">
-          <input
-            type="text"
-            className="form-control"
-            placeholder="e.g. Nike, Amazon, Starbucks…"
-            value={query}
-            autoFocus
-            onChange={(e) => handleInput(e.target.value)}
-            onFocus={() => setShowSuggestions(query.length > 0)}
-            onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
-          />
-          {query && (
-            <button
-              type="button"
-              onClick={() => { setQuery(""); onChange(""); }}
-              style={{
-                position: "absolute",
-                right: 10,
-                top: "50%",
-                transform: "translateY(-50%)",
-                background: "none",
-                border: "none",
-                color: "#adb5bd",
-                fontSize: 18,
-                lineHeight: 1,
-                cursor: "pointer",
-                padding: "0 2px",
-              }}
-            >
-              ×
-            </button>
-          )}
-        </div>
-
-        {/* Suggestions dropdown */}
-        {showSuggestions && filtered.length > 0 && (
-          <div
-            style={{
-              border: "1px solid #dee2e6",
-              borderRadius: 8,
-              overflow: "hidden",
-              marginTop: 4,
-              boxShadow: "0 4px 12px rgba(0,0,0,0.08)",
-            }}
-          >
-            {filtered.slice(0, 5).map((s) => (
-              <div
-                key={s}
-                onMouseDown={() => selectBrand(s)}
-                style={{
-                  padding: "9px 14px",
-                  fontSize: 14,
-                  cursor: "pointer",
-                  borderBottom: "1px solid #f1f3f5",
-                  background: "#fff",
-                }}
-                onMouseEnter={(e) =>
-                  (e.currentTarget.style.background = "#f8f9fa")
-                }
-                onMouseLeave={(e) =>
-                  (e.currentTarget.style.background = "#fff")
-                }
-              >
-                {s}
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* Selected chip */}
-      {brand && (
-        <div className="d-flex align-items-center gap-2 mt-2">
-          <span style={{ fontSize: 13, color: "#6c757d" }}>Selected:</span>
-          <span
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 6,
-              background: "#e7f1ff",
-              color: "#0d6efd",
-              border: "1px solid #b6d4fe",
-              borderRadius: 20,
-              padding: "3px 12px",
-              fontSize: 13,
-              fontWeight: 500,
-            }}
-          >
-            {brand}
-          </span>
-        </div>
-      )}
+const Step1Brand = ({ brand, onChange }: Step1Props) => (
+  <div>
+    <p className="text-muted mb-3" style={{ fontSize: 14 }}>
+      Enter the brand name you want to monitor for discounted gift cards.
+    </p>
+    <div className="mb-3">
+      <label className="form-label" style={{ fontSize: 13, fontWeight: 500 }}>
+        Brand name
+      </label>
+      <input
+        type="text"
+        className="form-control"
+        placeholder="e.g. Nike, Amazon, Starbucks…"
+        value={brand}
+        autoFocus
+        onChange={(e) => onChange(e.target.value)}
+      />
     </div>
-  );
-};
+  </div>
+);
 
 // ─── Step 2: Criteria ─────────────────────────────────────────────────────────
 
@@ -390,9 +274,20 @@ const Step3Platforms = ({
 
 // ─── Main Modal ───────────────────────────────────────────────────────────────
 
-const CreateGiftcardAlertModal = ({ onAddSuccess, onClose }: CreateAlertModalProps) => {
+const CreateGiftcardAlertModal = ({ onAddSuccess, onClose, editingAlert }: CreateAlertModalProps) => {
   const [step, setStep] = useState(0);
-  const [form, setForm] = useState<FormData>(DEFAULT_FORM);
+  const [form, setForm] = useState<FormData>(
+    editingAlert
+      ? {
+          brand: editingAlert.brand,
+          minCardValue: editingAlert.minCardValue,
+          maxCardValue: editingAlert.maxCardValue,
+          minDiscountPercent: editingAlert.minDiscountPercent,
+          platforms: editingAlert.platforms,
+          urls: editingAlert.urls,
+        }
+      : DEFAULT_FORM
+  );
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
@@ -451,26 +346,30 @@ const CreateGiftcardAlertModal = ({ onAddSuccess, onClose }: CreateAlertModalPro
   };
 
   const handleSubmit = async () => {
-    setIsSaving(true);
-    setSaveError(null);
-    try {
-      const payload: AlertFormData = {
-        brand: form.brand.trim().toLowerCase(),
-        minCardValue: form.minCardValue,
-        maxCardValue: form.maxCardValue,
-        minDiscountPercent: form.minDiscountPercent,
-        platforms: form.platforms,
-        urls: form.urls,
-      };
+  setIsSaving(true);
+  setSaveError(null);
+  try {
+    const payload: AlertFormData = {
+      brand: form.brand.trim().toLowerCase(),
+      minCardValue: form.minCardValue,
+      maxCardValue: form.maxCardValue,
+      minDiscountPercent: form.minDiscountPercent,
+      platforms: form.platforms,
+      urls: form.urls,
+    };
+    if (editingAlert) {
+      await updateAlert(editingAlert.id, payload);
+    } else {
       await createAlert(payload);
-      onAddSuccess();
-      onClose();
-    } catch (err: any) {
-      setSaveError(err.message || "Failed to save alert. Please try again.");
-    } finally {
-      setIsSaving(false);
     }
-  };
+    onAddSuccess();
+    onClose();
+  } catch (err: any) {
+    setSaveError(err.message || "Failed to save alert. Please try again.");
+  } finally {
+    setIsSaving(false);
+  }
+};
 
   // ── Render ──────────────────────────────────────────────────────────────────
 
@@ -488,7 +387,7 @@ const CreateGiftcardAlertModal = ({ onAddSuccess, onClose }: CreateAlertModalPro
             <div className="modal-header" style={{ borderBottom: "1px solid #f1f3f5", padding: "1rem 1.25rem" }}>
               <div>
                 <h5 className="modal-title mb-0" style={{ fontSize: 16, fontWeight: 600 }}>
-                  New gift card alert
+                  {editingAlert ? "Edit gift card alert" : "New gift card alert"}
                 </h5>
                 <small className="text-muted">
                   Step {step + 1} of 3 — {STEP_TITLES[step]}
@@ -564,7 +463,7 @@ const CreateGiftcardAlertModal = ({ onAddSuccess, onClose }: CreateAlertModalPro
                     role="status"
                   />
                 )}
-                {step === 2 ? "Create alert" : "Next →"}
+                {step === 2 ? (editingAlert ? "Save changes" : "Create alert") : "Next →"}
               </button>
             </div>
 

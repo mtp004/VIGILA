@@ -13,7 +13,7 @@ async def fetch_page(url: str, context=None) -> str:
         page = await context.new_page()
         try:
             await page.goto(url, wait_until="domcontentloaded", timeout=30000)
-            await page.wait_for_timeout(10000)
+            await page.wait_for_timeout(60000)
             html = await page.content()
         finally:
             await page.close()
@@ -31,7 +31,7 @@ async def fetch_page(url: str, context=None) -> str:
             page = await temp_context.new_page()
             try:
                 await page.goto(url, wait_until="domcontentloaded", timeout=30000)
-                await page.wait_for_timeout(10000)
+                await page.wait_for_timeout(60000)
                 html = await page.content()
             finally:
                 await browser.close()

@@ -29,7 +29,13 @@ const GiftCardAlertPage = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
-  
+  const [editingAlert, setEditingAlert] = useState<GiftCardAlert | null>(null);
+
+  const handleEdit = (alert: GiftCardAlert) => {
+    setEditingAlert(alert);
+    setShowCreateModal(true);
+  };
+
   const loadAlerts = async () => {
     try {
       setLoading(true);
@@ -100,7 +106,7 @@ const GiftCardAlertPage = () => {
               key={alert.id}
               alert={alert}
               onToggle={handleToggle}
-              onEdit={() => {/* EditAlertModal coming next */}}
+              onEdit={handleEdit}
               onDelete={handleDelete}
             />
           ))
@@ -109,7 +115,8 @@ const GiftCardAlertPage = () => {
       {showCreateModal && (
         <CreateAlertModal
           onAddSuccess={loadAlerts}
-          onClose={() => setShowCreateModal(false)}
+          editingAlert={editingAlert}
+          onClose={() => { setShowCreateModal(false); setEditingAlert(null); }}
         />
       )}
     </div>

@@ -94,17 +94,17 @@ async def trigger_giftcard_alerts():
             print("[DEBUG] No active alerts found in database.")
             return {"status": "success", "message": "No active alerts to process."}
 
-        all_urls = set()
+        all_url_tasks = []
+        seen_urls = set()
         for brand, users_dict in brand_user_alerts.items():
             for uid, alerts_map in users_dict.items():
                 for alert_id, alert_data in alerts_map.items():
-                    urls_map = alert_data.get("urls", {})
-                    for platform_name, url in urls_map.items():
-                        if url:
-                            all_urls.add(url)
+                    for platform_name, url in alert_data.get("urls", {}).items():
+                        if url and url not in seen_urls:
+                            all_url_tasks.append((url, brand))
+                            seen_urls.add(url)
 
-        print(f"[DEBUG] Dispatching scraper for URLs: {list(all_urls)}")
-        scraped_results = await run_orchestrator(list(all_urls))
+        scraped_results = await run_orchestrator(all_url_tasks)
 
         scraped_by_brand = {}
         for res in scraped_results:

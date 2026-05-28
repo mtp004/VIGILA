@@ -1,5 +1,4 @@
 import sys
-import re
 import json
 import asyncio
 
@@ -22,30 +21,12 @@ except ImportError as e:
 # =====================================================================
 # 1. PRE-PARSE ANALYSIS LAYER
 # =====================================================================
-def analyze_url(url: str) -> tuple[str, str]:
+def detect_website(url: str) -> str:
     url_lower = url.lower()
-    
-    if "carddepot.com" in url_lower:
-        website = "carddepot"
-        match = re.search(r"discount-(.+?)-gift-cards", url_lower)
-        brand = match.group(1) if match else "unknown"
-        
-    elif "gcx.app" in url_lower:
-        website = "gcx"
-        match = re.search(r"buy-(.+?)-gift-cards", url_lower)
-        brand = match.group(1) if match else "unknown"
-        
-    elif "cardcash.com" in url_lower:
-        website = "cardcash"
-        # Added \(\) to regex to correctly capture brands like 'apple-(not-itunes)'
-        match = re.search(r"discount-(.+?)-cards", url_lower)
-        brand = match.group(1) if match else "unknown"
-        
-    else:
-        website = "unknown"
-        brand = "unknown"
-        
-    return website, brand
+    if "carddepot.com" in url_lower: return "carddepot"
+    if "gcx.app" in url_lower:       return "gcx"
+    if "cardcash.com" in url_lower:  return "cardcash"
+    return "unknown"
 
 # =====================================================================
 # 2. CLEAN CONCURRENT SCRAE WORKER
@@ -83,25 +64,20 @@ async def scrape_worker(context, url: str, website: str, brand: str, delay: floa
 # =====================================================================
 # 3. PIPELINE ORCHESTRATOR
 # =====================================================================
-async def run_orchestrator(url_list: list[str]) -> list[dict]:
+async def run_orchestrator(url_tasks: list[tuple[str, str]]) -> list[dict]:
     pre_parsed_tasks = []
-    for url in url_list:
-        website, brand = analyze_url(url)
-        pre_parsed_tasks.append({
-            "url": url,
-            "website": website,
-            "brand": brand
-        })
+    for url, brand in url_tasks:
+        website = detect_website(url)
+        pre_parsed_tasks.append({"url": url, "website": website, "brand": brand})
 
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True)
         context = await browser.new_context(
-            viewport={"width": 1920, "height": 1080},
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
         )
         
         tasks = [
-            scrape_worker(context, task["url"], task["website"], task["brand"], delay=i)
+            scrape_worker(context, task["url"], task["website"], task["brand"], delay=i*2)
             for i, task in enumerate(pre_parsed_tasks)
         ]
         
@@ -112,11 +88,10 @@ async def run_orchestrator(url_list: list[str]) -> list[dict]:
 
 if __name__ == "__main__":
     TEST_URLS = [
-        # Added trailing slashes to CardCash URLs to prevent redirect-cycle timeouts
-        "https://www.cardcash.com/buy-gift-cards/discount-apple-(not-itunes)-cards/",
-        "https://carddepot.com/brands/discount-nike-gift-cards",
-        "https://gcx.app/buy-nike-gift-cards",
-        "https://www.cardcash.com/buy-gift-cards/discount-nike-cards/"
+        ("https://www.cardcash.com/buy-gift-cards/discount-apple-(not-itunes)-cards/", "apple"),
+        ("https://carddepot.com/brands/discount-nike-gift-cards", "nike"),
+        ("https://gcx.app/buy-nike-gift-cards", "nike"),
+        ("https://www.cardcash.com/buy-gift-cards/discount-nike-cards/", "nike"),
     ]
     
     output_matrix = asyncio.run(run_orchestrator(TEST_URLS))
