@@ -283,7 +283,11 @@ const CreateGiftcardAlertModal = ({ onAddSuccess, onClose, editingAlert }: Creat
           minCardValue: editingAlert.minCardValue,
           maxCardValue: editingAlert.maxCardValue,
           minDiscountPercent: editingAlert.minDiscountPercent,
-          platforms: editingAlert.platforms,
+          platforms: {
+            gcx: editingAlert.platforms.gcx.active,
+            cardcash: editingAlert.platforms.cardcash.active,
+            carddepot: editingAlert.platforms.carddepot.active,
+          },
           urls: editingAlert.urls,
         }
       : DEFAULT_FORM

@@ -9,7 +9,6 @@ import {
   serverTimestamp,
   Timestamp,
 } from "firebase/firestore";
-import { type WithFieldValue } from "firebase/firestore";
 
 export interface GiftCardAlert {
   id: string;
@@ -21,7 +20,11 @@ export interface GiftCardAlert {
   lastCheckedAt: Timestamp | null;
   createdAt: Timestamp;
   urls: { gcx: string; cardcash: string; carddepot: string };
-  platforms: { gcx: boolean; cardcash: boolean; carddepot: boolean };
+  platforms: {
+    gcx: { active: boolean; highest_discount?: number };
+    cardcash: { active: boolean; highest_discount?: number };
+    carddepot: { active: boolean; highest_discount?: number };
+  };
   satisfied_by: string[];
 }
 
@@ -52,6 +55,11 @@ export const createAlert = async (data: AlertFormData): Promise<string> => {
   const user = requireUser();
   const docRef = await addDoc(alertsRef(user.uid), {
     ...data,
+    platforms: {
+      gcx: { active: data.platforms.gcx },
+      cardcash: { active: data.platforms.cardcash },
+      carddepot: { active: data.platforms.carddepot },
+    },
     isActive: true,
     satisfied_by: [],
     lastCheckedAt: null,
@@ -66,15 +74,17 @@ export const fetchAlerts = async (): Promise<GiftCardAlert[]> => {
   return snap.docs.map((d) => ({ id: d.id, ...d.data() } as GiftCardAlert));
 };
 
-export const updateAlert = async (
-  alertId: string,
-  data: Partial<AlertFormData>
-): Promise<void> => {
+export const updateAlert = async (alertId: string, data: Partial<AlertFormData>): Promise<void> => {
   const user = requireUser();
-  await updateDoc(
-    alertDoc(user.uid, alertId), 
-    data as WithFieldValue<Partial<AlertFormData>>
-  );
+  const payload: any = { ...data };
+  if (data.platforms) {
+    payload.platforms = {
+      gcx: { active: data.platforms.gcx },
+      cardcash: { active: data.platforms.cardcash },
+      carddepot: { active: data.platforms.carddepot },
+    };
+  }
+  await updateDoc(alertDoc(user.uid, alertId), payload);
 };
 
 export const deleteAlert = async (alertId: string): Promise<void> => {

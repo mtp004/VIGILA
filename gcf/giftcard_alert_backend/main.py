@@ -134,29 +134,39 @@ async def trigger_giftcard_alerts():
                     triggered_cards = []
                     satisfied_platforms = set()
 
+                    highest_discounts_this_alert = {}
                     for platform_name, url in alert_data.get("urls", {}).items():
                         if not url or url not in url_results:
                             continue
                         result = url_results[url]
                         website = result["website"]
-                        is_allowed = platforms_toggle.get(website, True)
+                        is_allowed = platforms_toggle.get(website, {}).get("active", True)
                         print(f"     Checking platform: '{website}' | Allowed? {is_allowed}")
                         if not is_allowed:
                             continue
                         for card in result["discounts"]:
                             face = float(card.get("face_value", 0))
                             pct = float(card.get("discount_pct", 0))
+
+                            if website not in highest_discounts_this_alert or pct > highest_discounts_this_alert[website]:
+                                highest_discounts_this_alert[website] = pct
                             if pct >= min_discount and min_val <= face <= max_val:
                                 triggered_cards.append({**card, "website": website})
                                 satisfied_platforms.add(website)
                                 
                     print(f"     Currently satisfied this run: {satisfied_platforms}")
                     
-                    doc_ref = db.collection("users").document(uid).collection("giftcard_alerts").document(alert_id)
-                    updates_batch.update(doc_ref, {
+                    update_payload = {
                         "lastCheckedAt": firestore.SERVER_TIMESTAMP,
                         "satisfied_by": list(satisfied_platforms)
-                    })
+                    }
+                    for platform_name, url in alert_data.get("urls", {}).items():
+                        if not url:
+                            continue
+                        website = url_results[url]["website"] if url in url_results else platform_name
+                        update_payload[f"platforms.{website}.highest_discount"] = highest_discounts_this_alert.get(website)
+                    doc_ref = db.collection("users").document(uid).collection("giftcard_alerts").document(alert_id)
+                    updates_batch.update(doc_ref, update_payload)
 
                     newly_satisfied = satisfied_platforms - previously_satisfied
                     newly_triggered_cards = [c for c in triggered_cards if c["website"] in newly_satisfied]

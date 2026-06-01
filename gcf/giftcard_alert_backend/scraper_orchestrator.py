@@ -62,14 +62,3 @@ async def run_orchestrator(url_list: list[str]) -> list[dict]:
         results = await asyncio.gather(*tasks)
         await browser.close()
         return results
-
-if __name__ == "__main__":
-    TEST_URLS = [
-        "https://www.cardcash.com/buy-gift-cards/discount-apple-(not-itunes)-cards/",
-        "https://carddepot.com/brands/discount-nike-gift-cards",
-        "https://gcx.app/buy-nike-gift-cards",
-        "https://www.cardcash.com/buy-gift-cards/discount-nike-cards/",
-    ]
-    output_matrix = asyncio.run(run_orchestrator(TEST_URLS))
-    print("\n" + "="*60 + "\nORCHESTRATOR OUTPUT MATRIX:\n" + "="*60)
-    print(json.dumps(output_matrix, indent=2))

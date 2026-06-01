@@ -39,10 +39,12 @@ interface PlatformBadgeProps {
   platformId: string;
   enabled: boolean;
   satisfied: boolean;
+  highestDiscount?: number;
 }
 
-const PlatformBadge = ({ platformId, enabled, satisfied }: PlatformBadgeProps) => {
+const PlatformBadge = ({ platformId, enabled, satisfied, highestDiscount }: PlatformBadgeProps) => {
   const label = PLATFORM_LABELS[platformId] ?? platformId;
+  const discountLabel = highestDiscount != null ? ` · ${highestDiscount.toFixed(1)}% off` : "";
 
   if (!enabled) {
     return (
@@ -78,7 +80,7 @@ const PlatformBadge = ({ platformId, enabled, satisfied }: PlatformBadgeProps) =
         <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
           <path d="M2 5l2 2 4-4" stroke="#065f46" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
-        {label}
+        {label}{discountLabel}
       </span>
     );
   }
@@ -95,7 +97,7 @@ const PlatformBadge = ({ platformId, enabled, satisfied }: PlatformBadgeProps) =
         border: "1px solid #dee2e6",
       }}
     >
-      {label}
+      {label}{discountLabel}
     </span>
   );
 };
@@ -111,7 +113,7 @@ const AlertCard = ({ alert, onToggle, onEdit, onDelete }: AlertCardProps) => {
   const initials = getBrandInitials(alert.brand);
   const satisfiedSet = new Set(alert.satisfied_by);
   const satisfiedCount = alert.satisfied_by.length;
-  const enabledPlatforms = Object.entries(alert.platforms).filter(([, v]) => v);
+  const enabledPlatforms = Object.entries(alert.platforms).filter(([, v]) => v.active)
 
   return (
     <div
@@ -225,12 +227,13 @@ const AlertCard = ({ alert, onToggle, onEdit, onDelete }: AlertCardProps) => {
         <hr style={{ margin: "0 0 12px", borderColor: "#f1f3f5" }} />
 
         <div className="d-flex align-items-center flex-wrap gap-2">
-          {Object.entries(alert.platforms).map(([platformId, enabled]) => (
+          {Object.entries(alert.platforms).map(([platformId, val]) => (
             <PlatformBadge
               key={platformId}
               platformId={platformId}
-              enabled={enabled}
+              enabled={val.active}
               satisfied={satisfiedSet.has(platformId)}
+              highestDiscount={val.highest_discount}
             />
           ))}
 
