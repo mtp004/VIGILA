@@ -78,12 +78,13 @@ export const updateAlert = async (alertId: string, data: Partial<AlertFormData>)
   const user = requireUser();
   const payload: any = { ...data };
   if (data.platforms) {
-    payload.platforms = {
-      gcx: { active: data.platforms.gcx },
-      cardcash: { active: data.platforms.cardcash },
-      carddepot: { active: data.platforms.carddepot },
-    };
+    delete payload.platforms;
+    payload["platforms.gcx.active"] = data.platforms.gcx;
+    payload["platforms.cardcash.active"] = data.platforms.cardcash;
+    payload["platforms.carddepot.active"] = data.platforms.carddepot;
   }
+  payload.satisfied_by = [];
+  payload.lastCheckedAt = null;
   await updateDoc(alertDoc(user.uid, alertId), payload);
 };
 
