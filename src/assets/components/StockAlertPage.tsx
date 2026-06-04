@@ -1,16 +1,13 @@
 import { useState } from "react";
+import { useOutletContext } from "react-router-dom";
 import VolumeModal from "./VolumeModal";
 import SymbolListItem from "./SymbolListItem";
-import { type IndexSuggestion } from "../APIs/StockFirestore";
+import { type DashboardOutletContext } from "./Dashboard";
 
-interface HomePageProps {
-  userSymbols: IndexSuggestion[];
-  onRemoveSymbol: (symbol: IndexSuggestion) => void;
-  onAddSuccess: () => void;
-  error: string | null;
-}
+const StockAlertPage = () => {
+  const { userSymbols, symbolsError, fetchSymbols, handleRemoveSymbol } =
+    useOutletContext<DashboardOutletContext>();
 
-const StockAlertPage = ({ userSymbols, onRemoveSymbol, onAddSuccess, error }: HomePageProps) => {
   const [showPopup, setShowPopup] = useState(false);
 
   return (
@@ -32,9 +29,9 @@ const StockAlertPage = ({ userSymbols, onRemoveSymbol, onAddSuccess, error }: Ho
 
       <div className="flex-grow-1 overflow-hidden mt-4 mx-4 d-flex flex-column">
         <h5>Your Saved Volume Symbols</h5>
-        {error && <div className="text-danger mb-2">{error}</div>}
+        {symbolsError && <div className="text-danger mb-2">{symbolsError}</div>}
         <div className="flex-grow-1 overflow-auto border rounded">
-          <SymbolListItem symbols={userSymbols} onRemove={onRemoveSymbol} />
+          <SymbolListItem symbols={userSymbols} onRemove={handleRemoveSymbol} />
         </div>
       </div>
 
@@ -50,7 +47,7 @@ const StockAlertPage = ({ userSymbols, onRemoveSymbol, onAddSuccess, error }: Ho
                 </div>
                 <div className="modal-body">
                   <VolumeModal
-                    onAddSuccess={onAddSuccess}
+                    onAddSuccess={fetchSymbols}
                     existingSymbols={new Set(userSymbols.map(s => s.symbol))}
                   />
                 </div>

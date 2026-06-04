@@ -1,12 +1,9 @@
-import { useState, useEffect } from "react";
-import {
-  fetchAlerts,
-  deleteAlert,
-  toggleAlert,
-  type GiftCardAlert,
-} from "../APIs/GiftcardFirestore";
+import { useState } from "react";
+import { useOutletContext } from "react-router-dom";
+import { type GiftCardAlert } from "../APIs/GiftcardFirestore";
 import CreateAlertModal from "./CreateGiftcardAlertModal";
 import AlertCard from "./GiftcardAlertCard";
+import { type DashboardOutletContext } from "./Dashboard";
 
 const EmptyState = ({ onAdd }: { onAdd: () => void }) => (
   <div className="d-flex flex-column align-items-center justify-content-center text-center" style={{ padding: "4rem 2rem", color: "#6c757d" }}>
@@ -24,58 +21,22 @@ const EmptyState = ({ onAdd }: { onAdd: () => void }) => (
   </div>
 );
 
-const GiftCardAlertPage = () => {
-  const [alerts, setAlerts] = useState<GiftCardAlert[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+const GiftcardAlertPage = () => {
+  const {
+    alerts,
+    alertsLoading,
+    alertsError,
+    loadAlerts,
+    handleToggle,
+    handleDelete,
+  } = useOutletContext<DashboardOutletContext>();
+
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [editingAlert, setEditingAlert] = useState<GiftCardAlert | null>(null);
 
   const handleEdit = (alert: GiftCardAlert) => {
     setEditingAlert(alert);
     setShowCreateModal(true);
-  };
-
-  const loadAlerts = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      const data = await fetchAlerts();
-      setAlerts(data);
-    } catch (err: any) {
-      setError(err.message || "Failed to load alerts.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    loadAlerts();
-  }, []);
-
-  const handleToggle = async (alertId: string, newValue: boolean) => {
-    setAlerts((prev) =>
-      prev.map((a) => (a.id === alertId ? { ...a, isActive: newValue } : a))
-    );
-    try {
-      await toggleAlert(alertId, newValue);
-    } catch (err: any) {
-      setAlerts((prev) =>
-        prev.map((a) => (a.id === alertId ? { ...a, isActive: !newValue } : a))
-      );
-      setError(err.message || "Failed to update alert.");
-    }
-  };
-
-  const handleDelete = async (alertId: string) => {
-    const removed = alerts.find((a) => a.id === alertId);
-    setAlerts((prev) => prev.filter((a) => a.id !== alertId));
-    try {
-      await deleteAlert(alertId);
-    } catch (err: any) {
-      if (removed) setAlerts((prev) => [...prev, removed]);
-      setError(err.message || "Failed to delete alert.");
-    }
   };
 
   return (
@@ -85,14 +46,14 @@ const GiftCardAlertPage = () => {
         <button className="btn btn-primary btn-sm" onClick={() => setShowCreateModal(true)}>+ New alert</button>
       </div>
 
-      {error && (
+      {alertsError && (
         <div className="alert alert-danger mx-3 mt-3 mb-0 py-2" role="alert">
-          <small>{error}</small>
+          <small>{alertsError}</small>
         </div>
       )}
 
       <div className="flex-grow-1 overflow-auto p-3">
-        {loading ? (
+        {alertsLoading ? (
           <div className="d-flex justify-content-center align-items-center" style={{ height: "200px" }}>
             <div className="spinner-border spinner-border-sm text-secondary" role="status">
               <span className="visually-hidden">Loading...</span>
@@ -112,6 +73,7 @@ const GiftCardAlertPage = () => {
           ))
         )}
       </div>
+
       {showCreateModal && (
         <CreateAlertModal
           onAddSuccess={loadAlerts}
@@ -123,4 +85,4 @@ const GiftCardAlertPage = () => {
   );
 };
 
-export default GiftCardAlertPage;
+export default GiftcardAlertPage;
