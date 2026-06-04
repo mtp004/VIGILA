@@ -40,11 +40,21 @@ interface PlatformBadgeProps {
   enabled: boolean;
   satisfied: boolean;
   highestDiscount?: number;
+  url: string
 }
 
-const PlatformBadge = ({ platformId, enabled, satisfied, highestDiscount }: PlatformBadgeProps) => {
+const PlatformBadge = ({ platformId, enabled, satisfied, highestDiscount, url}: PlatformBadgeProps) => {
   const label = PLATFORM_LABELS[platformId] ?? platformId;
   const discountLabel = highestDiscount != null ? ` · ${highestDiscount.toFixed(1)}% off` : "";
+
+  const labelNode = (
+    <>
+      <a href={url} target="_blank" rel="noopener noreferrer" style={{ color: "inherit"}}>
+        {label}
+      </a>
+      {discountLabel}
+    </>
+  );
 
   if (!enabled) {
     return (
@@ -59,7 +69,7 @@ const PlatformBadge = ({ platformId, enabled, satisfied, highestDiscount }: Plat
           border: "1px solid #e9ecef",
         }}
       >
-        {label}
+        {labelNode}
       </span>
     );
   }
@@ -80,7 +90,7 @@ const PlatformBadge = ({ platformId, enabled, satisfied, highestDiscount }: Plat
         <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
           <path d="M2 5l2 2 4-4" stroke="#065f46" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
-        {label}{discountLabel}
+        {labelNode}
       </span>
     );
   }
@@ -97,7 +107,7 @@ const PlatformBadge = ({ platformId, enabled, satisfied, highestDiscount }: Plat
         border: "1px solid #dee2e6",
       }}
     >
-      {label}{discountLabel}
+      {labelNode}
     </span>
   );
 };
@@ -109,7 +119,7 @@ interface AlertCardProps {
   onDelete: (alertId: string) => void;
 }
 
-const AlertCard = ({ alert, onToggle, onEdit, onDelete }: AlertCardProps) => {
+const GiftcardAlertCard = ({ alert, onToggle, onEdit, onDelete }: AlertCardProps) => {
   const initials = getBrandInitials(alert.brand);
   const satisfiedSet = new Set(alert.satisfied_by);
   const satisfiedCount = alert.satisfied_by.length;
@@ -234,6 +244,7 @@ const AlertCard = ({ alert, onToggle, onEdit, onDelete }: AlertCardProps) => {
               enabled={val.active}
               satisfied={satisfiedSet.has(platformId)}
               highestDiscount={val.highest_discount}
+              url={alert.urls[platformId as keyof typeof alert.urls]}
             />
           ))}
 
@@ -264,4 +275,4 @@ const AlertCard = ({ alert, onToggle, onEdit, onDelete }: AlertCardProps) => {
   );
 };
 
-export default AlertCard;
+export default GiftcardAlertCard;

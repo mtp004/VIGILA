@@ -13,6 +13,7 @@ export interface DashboardOutletContext {
   symbolsError: string | null;
   fetchSymbols: () => Promise<void>;
   handleRemoveSymbol: (symbolObj: IndexSuggestion) => Promise<void>;
+  
   // giftcards
   alerts: GiftCardAlert[];
   alertsLoading: boolean;

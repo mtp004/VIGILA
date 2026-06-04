@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useOutletContext } from "react-router-dom";
 import { type GiftCardAlert } from "../APIs/GiftcardFirestore";
 import CreateAlertModal from "./CreateGiftcardAlertModal";
-import AlertCard from "./GiftcardAlertCard";
+import GiftcardAlertCard from "./GiftcardAlertCard";
 import { type DashboardOutletContext } from "./Dashboard";
 
 const EmptyState = ({ onAdd }: { onAdd: () => void }) => (
@@ -63,7 +63,7 @@ const GiftcardAlertPage = () => {
           <EmptyState onAdd={() => setShowCreateModal(true)} />
         ) : (
           alerts.map((alert) => (
-            <AlertCard
+            <GiftcardAlertCard
               key={alert.id}
               alert={alert}
               onToggle={handleToggle}
