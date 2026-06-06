@@ -1,5 +1,9 @@
 {
+  "compilerOptions": {
+    "sourceMap": true,
+    "allowJs": true
+  },
   "include": [
-    ".eslintrc.js"
+    "eslint.config.mjs"
   ]
 }
