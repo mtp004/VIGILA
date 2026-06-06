@@ -50,15 +50,21 @@ async def scrape_worker(context, url: str, website: str, delay: float) -> dict:
 
 async def run_orchestrator(url_list: list[str]) -> list[dict]:
     pre_parsed_tasks = [{"url": url, "website": detect_website(url)} for url in url_list]
+    results = []
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True)
         context = await browser.new_context(
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
         )
         tasks = [
-            scrape_worker(context, task["url"], task["website"], delay=i*2)
+            asyncio.ensure_future(
+                scrape_worker(context, task["url"], task["website"], delay=i*3)
+            )
             for i, task in enumerate(pre_parsed_tasks)
         ]
-        results = await asyncio.gather(*tasks)
+        for task in asyncio.as_completed(tasks):
+            result = await task
+            results.append(result)
+            print(f"[+] {result['url']} done — {len(results)}/{len(tasks)}")
         await browser.close()
-        return results
+    return results
