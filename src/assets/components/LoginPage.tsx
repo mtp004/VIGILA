@@ -29,29 +29,22 @@ const LoginPage = () => {
   const handleSubmit = async () => {
     setLoading(true);
     setError('');
-    
-    let userCredential;
-    if(email==import.meta.env.VITE_AUTHORIZED_EMAIL){
-      try {
+    try {
         if (isLogin) {
-          userCredential = await signInWithEmailAndPassword(auth, email, password);
-          if (!userCredential.user.emailVerified) {
-            await auth.signOut(); 
-            setError("Please check your Spam, Junk, Inbox folders to verify your email before signing in.");
-          }
-        }else {
-          userCredential = await createUserWithEmailAndPassword(auth, email, password);
-          auth.signOut(); 
-          await sendEmailVerification(userCredential.user);
-          setIsLogin(true);
-          setError("Please check your Spam, Junk, Inbox folders to verify your email before logging in");
+            const userCredential = await signInWithEmailAndPassword(auth, email, password);
+            if (!userCredential.user.emailVerified) {
+                await auth.signOut();
+                setError("Please verify your email before signing in (Note: email might be sent to your SPAM folder)");
+            }
+        } else {
+            const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+            auth.signOut();
+            await sendEmailVerification(userCredential.user);
+            setIsLogin(true);
+            setError("Please verify your email before logging in.");
         }
-      } catch (err: any) {
-        setLoading(false);
+    } catch (err: any) {
         setError(err.message);
-      }
-    } else{
-      setError("Service currently not available for the public");
     }
     setLoading(false);
   };

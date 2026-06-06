@@ -29,3 +29,7 @@ dist/
 *.tsbuildinfo
 # Google Cloud Functions env vars
 gcf/.env.yaml
+
+# firebase function
+functions/lib/
+functions/node_modules/
