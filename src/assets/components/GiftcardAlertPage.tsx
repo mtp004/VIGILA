@@ -3,7 +3,8 @@ import { useOutletContext } from "react-router-dom";
 import { type GiftCardAlert } from "../APIs/GiftcardFirestore";
 import CreateAlertModal from "./CreateGiftcardAlertModal";
 import GiftcardAlertCard from "./GiftcardAlertCard";
-import { type DashboardOutletContext } from "./Dashboard";
+import { type DashboardOutletContext, GIFTCARD_ALERT_LIMIT } from "./Dashboard";
+
 
 const EmptyState = ({ onAdd }: { onAdd: () => void }) => (
   <div className="d-flex flex-column align-items-center justify-content-center text-center" style={{ padding: "4rem 2rem", color: "#6c757d" }}>
@@ -29,6 +30,7 @@ const GiftcardAlertPage = () => {
     loadAlerts,
     handleToggle,
     handleDelete,
+    alertLimitReached
   } = useOutletContext<DashboardOutletContext>();
 
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -42,8 +44,16 @@ const GiftcardAlertPage = () => {
   return (
     <div className="vh-100 d-flex flex-column">
       <div className="d-flex justify-content-between align-items-center p-3" style={{ borderBottom: "1px solid #e9ecef" }}>
-        <h3 className="mb-0">Giftcard alerts</h3>
-        <button className="btn btn-primary btn-sm" onClick={() => setShowCreateModal(true)}>+ New alert</button>
+        <h3 className="mb-0">
+          Giftcard alerts{" "}
+          <span className={alertLimitReached ? "text-danger" : "text-muted"} style={{ fontSize: "0.8em", fontWeight: 500 }}>
+            ({alerts.length}/{GIFTCARD_ALERT_LIMIT} created)
+          </span>
+        </h3>
+        <button className="btn btn-primary btn-sm" 
+          onClick={() => setShowCreateModal(true)}
+          disabled={alertLimitReached}
+        >+ New alert</button>
       </div>
 
       {alertsError && (

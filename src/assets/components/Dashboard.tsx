@@ -7,6 +7,8 @@ import { fetchAlerts, deleteAlert, toggleAlert, type GiftCardAlert } from '../AP
 import 'bootstrap/dist/css/bootstrap.min.css'
 import 'bootstrap/dist/js/bootstrap.bundle.min.js'
 
+export const GIFTCARD_ALERT_LIMIT = 7;
+
 export interface DashboardOutletContext {
   // stocks
   userSymbols: IndexSuggestion[];
@@ -22,6 +24,7 @@ export interface DashboardOutletContext {
   loadAlerts: () => Promise<void>;
   handleToggle: (alertId: string, newValue: boolean) => Promise<void>;
   handleDelete: (alertId: string) => Promise<void>;
+  alertLimitReached: boolean;
 }
 
 const Dashboard = () => {
@@ -135,7 +138,7 @@ const Dashboard = () => {
       <div className="flex-grow-1">
         <Outlet context={{
           userSymbols, symbolsError, fetchSymbols, handleRemoveSymbol,
-          alerts, alertsLoading, alertsError, setAlertsError, loadAlerts, handleToggle, handleDelete
+          alerts, alertsLoading, alertsError, setAlertsError, loadAlerts, handleToggle, handleDelete, alertLimitReached: alerts.length >= GIFTCARD_ALERT_LIMIT
         } satisfies DashboardOutletContext} />
       </div>
     </div>

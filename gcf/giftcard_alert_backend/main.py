@@ -33,7 +33,9 @@ def send_giftcard_email(to_email: str, alert_reports: list[dict]) -> bool:
         html_snippets.append(brand_header)
         
         for site, cards_list in report["platform_groups"].items():
-            platform_html = f"<p style='margin-bottom: 5px; margin-left: 20px;'><b>{site}:</b></p>"
+            url = report.get("urls", {}).get(site, "")
+            site_label = f"<a href='{url}'>{site}</a>" if url else site
+            platform_html = f"<p style='margin-bottom: 5px; margin-left: 20px;'><b>{site_label}:</b></p>"
             platform_html += "<ul style='margin-top: 5px; margin-left: 40px;'>"
             for c in cards_list:
                 platform_html += f"<li>${c['face_value']} GC for <b>${c['sale_price']}</b> ({c['discount_pct']}% OFF)</li>"
@@ -194,7 +196,8 @@ async def trigger_giftcard_alerts():
                             "min_discount": min_discount,
                             "min_val": min_val,
                             "max_val": max_val,
-                            "platform_groups": platform_groups
+                            "platform_groups": platform_groups,
+                            "urls": alert_data.get("urls", {}),
                         }
                         
                         emails_to_send[uid].append(report_metadata)
