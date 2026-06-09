@@ -7,7 +7,7 @@ import { fetchAlerts, deleteAlert, toggleAlert, type GiftCardAlert } from '../AP
 import 'bootstrap/dist/css/bootstrap.min.css'
 import 'bootstrap/dist/js/bootstrap.bundle.min.js'
 
-export const GIFTCARD_ALERT_LIMIT = 7;
+export const GIFTCARD_ALERT_LIMIT = 10;
 
 export interface DashboardOutletContext {
   // stocks
