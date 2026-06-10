@@ -28,25 +28,36 @@ def detect_website(url: str) -> str:
     if "cardcash.com" in url_lower:  return "cardcash"
     return "unknown"
 
-async def scrape_worker(context, url: str, website: str, delay: float) -> dict:
+async def scrape_worker(context, url: str, website: str, delay: float, max_attempts: int = 3, backoff_timer: int = 60) -> dict:
     if website == "unknown":
         return {"url": url, "website": website, "discounts": []}
+    
     await asyncio.sleep(delay)
-    try:
-        print(f"[*] Firing async connection for: [{website.upper()}] {url}")
-        html = await fetch_page(url, context)
-        if website == "carddepot":
-            discounts = parse_carddepot(html)
-        elif website == "gcx":
-            discounts = parse_gcx(html)
-        elif website == "cardcash":
-            discounts = parse_cardcash(html)
-        else:
-            discounts = []
-        return {"url": url, "website": website, "discounts": discounts}
-    except Exception as e:
-        print(f"[-] Connection dropped or timed out on {url}: {e}")
-        return {"url": url, "website": website, "discounts": []}
+
+    for attempt in range(max_attempts):
+        try:
+            print(f"[*] Firing async connection for: [{website.upper()}] {url} (attempt {attempt + 1}/{max_attempts})")
+            html = await fetch_page(url, context)
+            
+            if website == "carddepot":
+                discounts = parse_carddepot(html)
+            elif website == "gcx":
+                discounts = parse_gcx(html)
+            elif website == "cardcash":
+                discounts = parse_cardcash(html)
+            else:
+                discounts = []
+
+            if discounts:
+                print(f"[+] Successfully scraped {len(discounts)} discounts for [{website.upper()}] {url}")
+                return {"url": url, "website": website, "discounts": discounts}
+        except Exception as e:
+            print(f"[-] Attempt {attempt + 1}/{max_attempts} failed for {url}: {e}")
+
+        if attempt < max_attempts - 1:
+            await asyncio.sleep(backoff_timer)
+
+    return {"url": url, "website": website, "discounts": []}
 
 async def run_orchestrator(url_list: list[str]) -> list[dict]:
     pre_parsed_tasks = [{"url": url, "website": detect_website(url)} for url in url_list]
@@ -65,6 +76,5 @@ async def run_orchestrator(url_list: list[str]) -> list[dict]:
         for task in asyncio.as_completed(tasks):
             result = await task
             results.append(result)
-            print(f"[+] {result['url']} done — {len(results)}/{len(tasks)}")
         await browser.close()
     return results
