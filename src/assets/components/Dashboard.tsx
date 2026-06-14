@@ -64,8 +64,7 @@ const Dashboard = () => {
     try {
       setAlertsLoading(true);
       setAlertsError(null);
-      const data = await fetchAlerts();
-      setAlerts(data);
+      
     } catch (err: any) {
       setAlertsError(err.message || "Failed to load alerts.");
     } finally {

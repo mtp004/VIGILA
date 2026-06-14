@@ -123,7 +123,7 @@ const GiftcardAlertCard = ({ alert, onToggle, onEdit, onDelete }: AlertCardProps
   const initials = getBrandInitials(alert.brand);
   const satisfiedSet = new Set(alert.satisfied_by);
   const satisfiedCount = alert.satisfied_by.length;
-  const enabledPlatforms = Object.entries(alert.platforms).filter(([, v]) => v.active)
+  const enabledPlatforms = Object.entries(alert.platforms).sort(([a], [b]) => a.localeCompare(b)).filter(([, v]) => v.active)
 
   return (
     <div
@@ -237,7 +237,7 @@ const GiftcardAlertCard = ({ alert, onToggle, onEdit, onDelete }: AlertCardProps
         <hr style={{ margin: "0 0 12px", borderColor: "#f1f3f5" }} />
 
         <div className="d-flex align-items-center flex-wrap gap-2">
-          {Object.entries(alert.platforms).map(([platformId, val]) => (
+          {Object.entries(alert.platforms).sort(([a], [b]) => a.localeCompare(b)).map(([platformId, val]) => (
             <PlatformBadge
               key={platformId}
               platformId={platformId}

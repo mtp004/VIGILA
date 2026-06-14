@@ -4,7 +4,7 @@ from email.mime.text import MIMEText
 from fastapi import FastAPI, HTTPException, Response
 import firebase_admin
 from firebase_admin import firestore, auth
-from scraper_orchestrator import run_orchestrator
+from scraper_orchestrator import run_orchestrator, detect_website
 import traceback
 
 if not firebase_admin._apps:
@@ -103,7 +103,7 @@ async def trigger_giftcard_alerts():
             for alerts_map in users_dict.values()
             for alert_data in alerts_map.values()
             for url in alert_data.get("urls", {}).values()
-            if url
+            if url and alert_data.get("platforms", {}).get(detect_website(url), {}).get("active", True)
         })
 
         scraped_results = await run_orchestrator(all_urls)
@@ -165,7 +165,7 @@ async def trigger_giftcard_alerts():
                     for platform_name, url in alert_data.get("urls", {}).items():
                         if not url:
                             continue
-                        website = url_results[url]["website"] if url in url_results else platform_name
+                        website = platform_name
                         update_payload[f"platforms.{website}.highest_discount"] = highest_discounts_this_alert.get(website)
                     doc_ref = db.collection("users").document(uid).collection("giftcard_alerts").document(alert_id)
                     updates_batch.update(doc_ref, update_payload)
