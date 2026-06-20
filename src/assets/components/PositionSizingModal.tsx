@@ -1,0 +1,367 @@
+import { useState, useEffect, useMemo } from "react";
+import debounce from "lodash/debounce";
+import { auth } from "../../firebase";
+import { type IndexSuggestion } from "../APIs/StockFirestore";
+
+interface PositionSizingResult {
+  ticker: string;
+  cash: number;
+  drawdownToleranceDollars: number;
+  confidenceLevelPct: number;
+  holdingPeriodYears: number;
+  estimatedAnnualVolatility: number;
+  estimatedAnnualDrift: number;
+  maxLeverage: number;
+  recommendedPositionSize: number;
+  achievedBreachProbability: number;
+  modelCaveat: string;
+}
+
+const POSITION_SIZING_URL = "https://position-sizing-906620176597.us-central1.run.app";
+
+const PositionSizingModal = () => {
+  // ticker search (mirrors VolumeModal, single-select instead of multi)
+  const [query, setQuery] = useState("");
+  const [suggestions, setSuggestions] = useState<IndexSuggestion[] | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
+  const [isFocused, setIsFocused] = useState(false);
+  const [selectedTicker, setSelectedTicker] = useState<IndexSuggestion | null>(null);
+
+  const API_KEY = import.meta.env.VITE_FINANCE_API_KEY;
+
+  const fetchIndexData = async (searchQuery: string) => {
+    if (searchQuery.length < 2) {
+      return;
+    }
+    setLoading(true);
+    setSearchError(null);
+    try {
+      const response = await fetch(
+        `https://financialmodelingprep.com/stable/search-symbol?query=${searchQuery}&apikey=${API_KEY}`
+      );
+
+      if (!response.ok) {
+        throw new Error(
+          "Network response was not ok. API key might be invalid or limit exceeded."
+        );
+      }
+
+      const data: IndexSuggestion[] = await response.json();
+      setSuggestions(data);
+    } catch (err: any) {
+      setSearchError(
+        "Failed to fetch data. Please check your API key and network connection."
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const debouncedFetch = useMemo(() => debounce(fetchIndexData, 400), []);
+
+  useEffect(() => {
+    debouncedFetch(query);
+    return () => debouncedFetch.cancel();
+  }, [query, debouncedFetch]);
+
+  const handleSelectTicker = (suggestion: IndexSuggestion) => {
+    setSelectedTicker(suggestion);
+    setQuery("");
+    setSuggestions(null);
+    setIsFocused(false);
+  };
+
+  const handleClearTicker = () => {
+    setSelectedTicker(null);
+  };
+
+  // analysis inputs
+  const [cash, setCash] = useState<string>("");
+  const [drawdownTolerance, setDrawdownTolerance] = useState<string>("");
+  const [confidenceLevel, setConfidenceLevel] = useState<string>("1");
+  const [holdingPeriodYears, setHoldingPeriodYears] = useState<string>("1");
+
+  // request state
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [analysisError, setAnalysisError] = useState<string | null>(null);
+  const [result, setResult] = useState<PositionSizingResult | null>(null);
+
+  const canSubmit =
+    selectedTicker !== null &&
+    cash !== "" &&
+    drawdownTolerance !== "" &&
+    confidenceLevel !== "" &&
+    Number(cash) > 0 &&
+    Number(drawdownTolerance) > 0 &&
+    Number(drawdownTolerance) < Number(cash) &&
+    Number(confidenceLevel) > 0 &&
+    Number(confidenceLevel) < 100;
+
+  const handleAnalyze = async () => {
+    if (!selectedTicker) return;
+
+    setIsAnalyzing(true);
+    setAnalysisError(null);
+    setResult(null);
+
+    try {
+      const user = auth.currentUser;
+      if (!user) {
+        throw new Error("You must be logged in to run this analysis.");
+      }
+      const idToken = await user.getIdToken();
+
+      const response = await fetch(POSITION_SIZING_URL, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify({
+          cash: Number(cash),
+          drawdownTolerance: Number(drawdownTolerance),
+          confidenceLevel: Number(confidenceLevel),
+          indexTicker: selectedTicker.symbol,
+          holdingPeriodYears: Number(holdingPeriodYears) || 1,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || `Request failed: ${response.status}`);
+      }
+
+      setResult(data);
+    } catch (err: any) {
+      setAnalysisError(err.message || "Failed to run analysis. Please try again.");
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
+
+  return (
+    <div className="position-relative">
+      {/* Ticker Search (single-select) */}
+      <label htmlFor="position-sizing-search" className="form-label">
+        Search for a Ticker to Analyze
+      </label>
+
+      {selectedTicker ? (
+        <div className="d-flex align-items-center justify-content-between border rounded p-2 mb-3">
+          <div>
+            <div className="fw-bold">{selectedTicker.name}</div>
+            <small className="text-muted">
+              {selectedTicker.symbol} ({selectedTicker.exchange})
+            </small>
+          </div>
+          <button
+            type="button"
+            className="btn-close"
+            aria-label="Clear ticker"
+            onClick={handleClearTicker}
+          ></button>
+        </div>
+      ) : (
+        <div className="position-relative mb-3">
+          <input
+            id="position-sizing-search"
+            type="text"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onFocus={() => {
+              setIsFocused(true);
+              setResult(null);
+              setAnalysisError(null);
+            }}
+            onBlur={() => setTimeout(() => setIsFocused(false), 200)}
+            placeholder="e.g., SPY"
+            className="form-control"
+            autoComplete="off"
+            style={{ paddingRight: query ? "40px" : "12px" }}
+          />
+          {query && (
+            <button
+              type="button"
+              onClick={() => {
+                setQuery("");
+                setSuggestions(null);
+              }}
+              aria-label="Clear input"
+              className="btn position-absolute top-50 end-0 translate-middle-y text-secondary"
+              style={{
+                maxWidth: "40px",
+                maxHeight: "40px",
+                fontSize: "20px",
+                lineHeight: "1",
+                textDecoration: "none",
+              }}
+            >
+              ×
+            </button>
+          )}
+        </div>
+      )}
+
+      {searchError && (
+        <div className="text-danger mt-1" style={{ fontSize: "0.875em" }}>
+          {searchError}
+        </div>
+      )}
+
+      {/* Suggestions List */}
+      {!selectedTicker && isFocused && query.length >= 2 && (
+        <div className="list-group position-absolute w-100" style={{ zIndex: 1000 }}>
+          {loading ? (
+            <div className="list-group-item text-muted p-2">
+              <small>Loading...</small>
+            </div>
+          ) : suggestions ? (
+            suggestions.length > 0 ? (
+              suggestions.slice(0, 3).map((suggestion) => (
+                <div
+                  key={suggestion.symbol}
+                  className="list-group-item d-flex justify-content-between align-items-center text-start p-2"
+                >
+                  <div>
+                    <div className="fw-bold">{suggestion.name}</div>
+                    <small className="text-muted">
+                      {suggestion.symbol} ({suggestion.exchange})
+                    </small>
+                  </div>
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-outline-primary"
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      handleSelectTicker(suggestion);
+                    }}
+                  >
+                    Select
+                  </button>
+                </div>
+              ))
+            ) : (
+              <div className="list-group-item text-muted p-2">
+                <small>No results found. Please use the ticker symbol (e.g., SPY) instead of the company name.</small>
+              </div>
+            )
+          ) : null}
+        </div>
+      )}
+
+      <hr className="my-4" />
+
+      {/* Analysis inputs */}
+      <div className="mb-3">
+        <label htmlFor="cash-input" className="form-label">Cash Amount ($)</label>
+        <input
+          id="cash-input"
+          type="number"
+          min="0"
+          step="any"
+          className="form-control"
+          value={cash}
+          onChange={(e) => setCash(e.target.value)}
+          placeholder="e.g., 1500"
+        />
+      </div>
+
+      <div className="mb-3">
+        <label htmlFor="drawdown-input" className="form-label">Max Drawdown Tolerance ($)</label>
+        <input
+          id="drawdown-input"
+          type="number"
+          min="0"
+          step="any"
+          className="form-control"
+          value={drawdownTolerance}
+          onChange={(e) => setDrawdownTolerance(e.target.value)}
+          placeholder="e.g., 200"
+        />
+      </div>
+
+      <div className="mb-3">
+        <label htmlFor="confidence-input" className="form-label">
+          Confidence Level (max % chance of breaching drawdown)
+        </label>
+        <input
+          id="confidence-input"
+          type="number"
+          min="0.1"
+          max="99"
+          step="0.1"
+          className="form-control"
+          value={confidenceLevel}
+          onChange={(e) => setConfidenceLevel(e.target.value)}
+          placeholder="e.g., 1 for 1%"
+        />
+      </div>
+
+      <div className="mb-3">
+        <label htmlFor="holding-period-input" className="form-label">Holding Period (years)</label>
+        <input
+          id="holding-period-input"
+          type="number"
+          min="0.1"
+          step="0.1"
+          className="form-control"
+          value={holdingPeriodYears}
+          onChange={(e) => setHoldingPeriodYears(e.target.value)}
+          placeholder="e.g., 1"
+        />
+      </div>
+
+      {analysisError && (
+        <div className="text-danger mb-3" style={{ fontSize: "0.875em" }}>
+          {analysisError}
+        </div>
+      )}
+
+      <div className="d-flex justify-content-center">
+        <button
+          type="button"
+          className="btn btn-primary"
+          onClick={handleAnalyze}
+          disabled={!canSubmit || isAnalyzing}
+        >
+          {isAnalyzing ? "Analyzing..." : "Run Position Sizing Analysis"}
+        </button>
+      </div>
+
+      {/* Result display */}
+      {result && (
+        <div className="mt-4 p-3 border rounded bg-light">
+          <h6 className="mb-3">Results for {result.ticker}</h6>
+          <div className="d-flex flex-column gap-2" style={{ fontSize: "0.9em" }}>
+            <div className="d-flex justify-content-between">
+              <span className="text-muted">Recommended Position Size:</span>
+              <span className="fw-bold">${result.recommendedPositionSize.toLocaleString()}</span>
+            </div>
+            <div className="d-flex justify-content-between">
+              <span className="text-muted">Max Leverage:</span>
+              <span className="fw-bold">{result.maxLeverage.toFixed(3)}x</span>
+            </div>
+            <div className="d-flex justify-content-between">
+              <span className="text-muted">Estimated Annual Volatility:</span>
+              <span>{(result.estimatedAnnualVolatility * 100).toFixed(2)}%</span>
+            </div>
+            <div className="d-flex justify-content-between">
+              <span className="text-muted">Estimated Annual Drift:</span>
+              <span>{(result.estimatedAnnualDrift * 100).toFixed(2)}%</span>
+            </div>
+            <div className="d-flex justify-content-between">
+              <span className="text-muted">Achieved Breach Probability:</span>
+              <span>{(result.achievedBreachProbability * 100).toFixed(2)}%</span>
+            </div>
+          </div>
+          <hr />
+          <small className="text-muted">{result.modelCaveat}</small>
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default PositionSizingModal;
