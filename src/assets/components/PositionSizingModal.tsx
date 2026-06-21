@@ -1,7 +1,14 @@
-import { useState, useEffect, useMemo } from "react";
-import debounce from "lodash/debounce";
+import { useState } from "react";
 import { auth } from "../../firebase";
+import { useTickerSearch } from "../../hooks/useTickerSearch";
 import { type IndexSuggestion } from "../APIs/StockFirestore";
+
+interface RiskRewardOptimal {
+  leverage: number;
+  positionSize: number;
+  breachProbability: number;
+  expectedValue: number;
+}
 
 interface PositionSizingResult {
   ticker: string;
@@ -9,66 +16,34 @@ interface PositionSizingResult {
   drawdownToleranceDollars: number;
   confidenceLevelPct: number;
   holdingPeriodYears: number;
+  driftLookbackYears: number;
   estimatedAnnualVolatility: number;
   estimatedAnnualDrift: number;
   maxLeverage: number;
   recommendedPositionSize: number;
   achievedBreachProbability: number;
-  modelCaveat: string;
+  riskRewardOptimal: RiskRewardOptimal;
 }
 
 const POSITION_SIZING_URL = "https://position-sizing-906620176597.us-central1.run.app";
 
 const PositionSizingModal = () => {
-  // ticker search (mirrors VolumeModal, single-select instead of multi)
-  const [query, setQuery] = useState("");
-  const [suggestions, setSuggestions] = useState<IndexSuggestion[] | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [searchError, setSearchError] = useState<string | null>(null);
-  const [isFocused, setIsFocused] = useState(false);
+  const {
+    query,
+    setQuery,
+    suggestions,
+    loading,
+    error: searchError,
+    isFocused,
+    setIsFocused,
+    clearSearch,
+  } = useTickerSearch();
+
   const [selectedTicker, setSelectedTicker] = useState<IndexSuggestion | null>(null);
-
-  const API_KEY = import.meta.env.VITE_FINANCE_API_KEY;
-
-  const fetchIndexData = async (searchQuery: string) => {
-    if (searchQuery.length < 2) {
-      return;
-    }
-    setLoading(true);
-    setSearchError(null);
-    try {
-      const response = await fetch(
-        `https://financialmodelingprep.com/stable/search-symbol?query=${searchQuery}&apikey=${API_KEY}`
-      );
-
-      if (!response.ok) {
-        throw new Error(
-          "Network response was not ok. API key might be invalid or limit exceeded."
-        );
-      }
-
-      const data: IndexSuggestion[] = await response.json();
-      setSuggestions(data);
-    } catch (err: any) {
-      setSearchError(
-        "Failed to fetch data. Please check your API key and network connection."
-      );
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const debouncedFetch = useMemo(() => debounce(fetchIndexData, 400), []);
-
-  useEffect(() => {
-    debouncedFetch(query);
-    return () => debouncedFetch.cancel();
-  }, [query, debouncedFetch]);
 
   const handleSelectTicker = (suggestion: IndexSuggestion) => {
     setSelectedTicker(suggestion);
-    setQuery("");
-    setSuggestions(null);
+    clearSearch();
     setIsFocused(false);
   };
 
@@ -76,13 +51,12 @@ const PositionSizingModal = () => {
     setSelectedTicker(null);
   };
 
-  // analysis inputs
   const [cash, setCash] = useState<string>("");
   const [drawdownTolerance, setDrawdownTolerance] = useState<string>("");
-  const [confidenceLevel, setConfidenceLevel] = useState<string>("1");
+  const [confidenceLevel, setConfidenceLevel] = useState<string>("5");
   const [holdingPeriodYears, setHoldingPeriodYears] = useState<string>("1");
+  const [driftLookbackYears, setDriftLookbackYears] = useState<string>("5");
 
-  // request state
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
   const [result, setResult] = useState<PositionSizingResult | null>(null);
@@ -92,11 +66,13 @@ const PositionSizingModal = () => {
     cash !== "" &&
     drawdownTolerance !== "" &&
     confidenceLevel !== "" &&
+    driftLookbackYears !== "" &&
     Number(cash) > 0 &&
     Number(drawdownTolerance) > 0 &&
     Number(drawdownTolerance) < Number(cash) &&
     Number(confidenceLevel) > 0 &&
-    Number(confidenceLevel) < 100;
+    Number(confidenceLevel) < 100 &&
+    Number(driftLookbackYears) > 0;
 
   const handleAnalyze = async () => {
     if (!selectedTicker) return;
@@ -112,7 +88,7 @@ const PositionSizingModal = () => {
       }
       const idToken = await user.getIdToken();
 
-      const response = await fetch(POSITION_SIZING_URL, {
+      const positionResponse = await fetch(POSITION_SIZING_URL, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -124,13 +100,14 @@ const PositionSizingModal = () => {
           confidenceLevel: Number(confidenceLevel),
           indexTicker: selectedTicker.symbol,
           holdingPeriodYears: Number(holdingPeriodYears) || 1,
+          driftLookbackYears: Number(driftLookbackYears) || 1,
         }),
       });
 
-      const data = await response.json();
+      const data = await positionResponse.json();
 
-      if (!response.ok) {
-        throw new Error(data.error || `Request failed: ${response.status}`);
+      if (!positionResponse.ok) {
+        throw new Error(data.error || `Request failed: ${positionResponse.status}`);
       }
 
       setResult(data);
@@ -143,7 +120,6 @@ const PositionSizingModal = () => {
 
   return (
     <div className="position-relative">
-      {/* Ticker Search (single-select) */}
       <label htmlFor="position-sizing-search" className="form-label">
         Search for a Ticker to Analyze
       </label>
@@ -184,10 +160,7 @@ const PositionSizingModal = () => {
           {query && (
             <button
               type="button"
-              onClick={() => {
-                setQuery("");
-                setSuggestions(null);
-              }}
+              onClick={clearSearch}
               aria-label="Clear input"
               className="btn position-absolute top-50 end-0 translate-middle-y text-secondary"
               style={{
@@ -210,7 +183,6 @@ const PositionSizingModal = () => {
         </div>
       )}
 
-      {/* Suggestions List */}
       {!selectedTicker && isFocused && query.length >= 2 && (
         <div className="list-group position-absolute w-100" style={{ zIndex: 1000 }}>
           {loading ? (
@@ -253,7 +225,6 @@ const PositionSizingModal = () => {
 
       <hr className="my-4" />
 
-      {/* Analysis inputs */}
       <div className="mb-3">
         <label htmlFor="cash-input" className="form-label">Cash Amount ($)</label>
         <input
@@ -313,6 +284,27 @@ const PositionSizingModal = () => {
         />
       </div>
 
+      <div className="mb-3">
+        <label htmlFor="drift-lookback-input" className="form-label">
+          Drift Lookback Period (years)
+        </label>
+        <input
+          id="drift-lookback-input"
+          type="number"
+          min="0.1"
+          step="0.1"
+          className="form-control"
+          value={driftLookbackYears}
+          onChange={(e) => setDriftLookbackYears(e.target.value)}
+          placeholder="e.g., 1"
+        />
+        <small className="text-muted">
+          How far back to look when estimating expected return. Shorter windows
+          (e.g. 1 year) are noisier and more sensitive to recent performance;
+          longer windows (e.g. 5-10 years) are more stable but slower to react.
+        </small>
+      </div>
+
       {analysisError && (
         <div className="text-danger mb-3" style={{ fontSize: "0.875em" }}>
           {analysisError}
@@ -330,14 +322,16 @@ const PositionSizingModal = () => {
         </button>
       </div>
 
-      {/* Result display */}
       {result && (
         <div className="mt-4 p-3 border rounded bg-light">
           <h6 className="mb-3">Results for {result.ticker}</h6>
+          
           <div className="d-flex flex-column gap-2" style={{ fontSize: "0.9em" }}>
             <div className="d-flex justify-content-between">
               <span className="text-muted">Recommended Position Size:</span>
-              <span className="fw-bold">${result.recommendedPositionSize.toLocaleString()}</span>
+              <span className="fw-bold">
+                ${result.recommendedPositionSize.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </span>
             </div>
             <div className="d-flex justify-content-between">
               <span className="text-muted">Max Leverage:</span>
@@ -352,12 +346,39 @@ const PositionSizingModal = () => {
               <span>{(result.estimatedAnnualDrift * 100).toFixed(2)}%</span>
             </div>
             <div className="d-flex justify-content-between">
+              <span className="text-muted">Drift Lookback Used:</span>
+              <span>{result.driftLookbackYears} yr</span>
+            </div>
+            <div className="d-flex justify-content-between">
               <span className="text-muted">Achieved Breach Probability:</span>
               <span>{(result.achievedBreachProbability * 100).toFixed(2)}%</span>
             </div>
           </div>
+
           <hr />
-          <small className="text-muted">{result.modelCaveat}</small>
+          <h6 className="mb-3">Risk-Reward Optimized Alternative</h6>
+          <p className="text-muted" style={{ fontSize: "0.85em" }}>
+            Your confidence level above targets a fixed breach probability. This
+            alternative instead maximizes expected profit minus the drawdown
+            amount weighted by its breach probability—it may suggest a
+            different leverage.
+          </p>
+          <div className="d-flex flex-column gap-2" style={{ fontSize: "0.9em" }}>
+            <div className="d-flex justify-content-between">
+              <span className="text-muted">Recommended Position Size:</span>
+              <span className="fw-bold">
+                ${result.riskRewardOptimal.positionSize.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </span>
+            </div>
+            <div className="d-flex justify-content-between">
+              <span className="text-muted">Recommended Leverage:</span>
+              <span className="fw-bold">{result.riskRewardOptimal.leverage.toFixed(3)}x</span>
+            </div>
+            <div className="d-flex justify-content-between">
+              <span className="text-muted">Implied Breach Probability:</span>
+              <span>{(result.riskRewardOptimal.breachProbability * 100).toFixed(2)}%</span>
+            </div>
+          </div>
         </div>
       )}
     </div>

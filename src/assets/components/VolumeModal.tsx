@@ -1,6 +1,6 @@
-import { useState, useEffect, useMemo } from "react";
-import debounce from "lodash/debounce";
-import { addVolumeSymbols, type IndexSuggestion} from "../APIs/StockFirestore";
+import { useState } from "react";
+import { useTickerSearch } from "../../hooks/useTickerSearch"; // Adjust path as needed
+import { addVolumeSymbols, type IndexSuggestion } from "../APIs/StockFirestore";
 
 interface VolumeModalProps {
   onAddSuccess: () => void;
@@ -8,65 +8,32 @@ interface VolumeModalProps {
 }
 
 const VolumeModal = ({ onAddSuccess, existingSymbols }: VolumeModalProps) => {
-  const [query, setQuery] = useState("");
-  const [suggestions, setSuggestions] = useState<IndexSuggestion[] | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [isFocused, setIsFocused] = useState(false);
-  const [selectedSymbols, setSelectedSymbols] = useState<IndexSuggestion[]>([]);
+  const {
+    query,
+    setQuery,
+    suggestions,
+    loading,
+    error,
+    isFocused,
+    setIsFocused,
+    clearSearch,
+  } = useTickerSearch();
 
+  const [selectedSymbols, setSelectedSymbols] = useState<IndexSuggestion[]>([]);
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveSuccess, setSaveSuccess] = useState(false);
 
-  const API_KEY = import.meta.env.VITE_FINANCE_API_KEY;
-
-  const fetchIndexData = async (searchQuery: string) => {
-    if (searchQuery.length < 2) {
-      return;
-    }
-    setLoading(true);
-    setError(null);
-    try {
-      const response = await fetch(
-        `https://financialmodelingprep.com/stable/search-symbol?query=${searchQuery}&apikey=${API_KEY}`
-      );
-
-      if (!response.ok) {
-        throw new Error(
-          "Network response was not ok. API key might be invalid or limit exceeded."
-        );
-      }
-
-      const data: IndexSuggestion[] = await response.json();
-      setSuggestions(data);
-    } catch (err: any) {
-      setError(
-        "Failed to fetch data. Please check your API key and network connection."
-      );
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const debouncedFetch = useMemo(() => debounce(fetchIndexData, 400), []);
-
-  useEffect(() => {
-    debouncedFetch(query);
-    return () => debouncedFetch.cancel();
-  }, [query, debouncedFetch]);
-
   const handleAddSymbol = (suggestion: IndexSuggestion) => {
     setSelectedSymbols((prev) => [...prev, suggestion]);
     existingSymbols.add(suggestion.symbol);
-    setQuery("");
-    setSuggestions(null);
+    clearSearch();
     setIsFocused(true);
   };
 
   const handleRemoveSymbolLocal = (symbol: string) => {
     setSelectedSymbols((prev) => prev.filter((s) => s.symbol !== symbol));
-    existingSymbols.delete(symbol)
+    existingSymbols.delete(symbol);
   };
 
   const handleAddVolumeIndicator = async () => {
@@ -98,44 +65,41 @@ const VolumeModal = ({ onAddSuccess, existingSymbols }: VolumeModalProps) => {
         Search for a Financial Symbol
       </label>
       <div className="position-relative mb-3">
-    <input
-      id="index-search"
-      type="text"
-      value={query}
-      onChange={(e) => setQuery(e.target.value)}
-      onFocus={() => {
-        setIsFocused(true);
-        setSaveSuccess(false);
-        setSaveError(null);
-      }}
-      onBlur={() => setTimeout(() => setIsFocused(false), 200)}
-      placeholder="e.g., AAPL"
-      className="form-control"
-      autoComplete="off"
-      autoFocus
-      style={{ paddingRight: query ? '40px' : '12px' }}
-    />
-    {query && (
-      <button
-        type="button"
-        onClick={() => {
-          setQuery("");
-          setSuggestions(null);
-        }}
-        aria-label="Clear input"
-        className="btn position-absolute top-50 end-0 translate-middle-y text-secondary"
-        style={{
-          maxWidth: '40px',
-          maxHeight: '40px',
-          fontSize: '20px',
-          lineHeight: '1',
-          textDecoration: 'none',
-        }}
-      >
-        ×
-      </button>
-    )}
-  </div>
+        <input
+          id="index-search"
+          type="text"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          onFocus={() => {
+            setIsFocused(true);
+            setSaveSuccess(false);
+            setSaveError(null);
+          }}
+          onBlur={() => setTimeout(() => setIsFocused(false), 200)}
+          placeholder="e.g., AAPL"
+          className="form-control"
+          autoComplete="off"
+          autoFocus
+          style={{ paddingRight: query ? "40px" : "12px" }}
+        />
+        {query && (
+          <button
+            type="button"
+            onClick={clearSearch}
+            aria-label="Clear input"
+            className="btn position-absolute top-50 end-0 translate-middle-y text-secondary"
+            style={{
+              maxWidth: "40px",
+              maxHeight: "40px",
+              fontSize: "20px",
+              lineHeight: "1",
+              textDecoration: "none",
+            }}
+          >
+            ×
+          </button>
+        )}
+      </div>
 
       {error && (
         <div className="text-danger mt-1" style={{ fontSize: "0.875em" }}>
@@ -156,7 +120,7 @@ const VolumeModal = ({ onAddSuccess, existingSymbols }: VolumeModalProps) => {
           ) : suggestions ? (
             suggestions.length > 0 ? (
               suggestions.slice(0, 3).map((suggestion) => {
-                const isAlreadyAdded = existingSymbols.has(suggestion.symbol)
+                const isAlreadyAdded = existingSymbols.has(suggestion.symbol);
                 return (
                   <div
                     key={suggestion.symbol}
@@ -184,7 +148,10 @@ const VolumeModal = ({ onAddSuccess, existingSymbols }: VolumeModalProps) => {
               })
             ) : (
               <div className="list-group-item text-muted p-2">
-                <small>No results found. Please use the ticker symbol(e.g., AAPL) instead of the company name.</small>
+                <small>
+                  No results found. Please use the ticker symbol(e.g., AAPL)
+                  instead of the company name.
+                </small>
               </div>
             )
           ) : null}
