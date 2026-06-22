@@ -31,8 +31,9 @@ def get_vol_and_drift(ticker: str, lookback_days: int = 252):
     sigma_annual = float(log_returns.std() * np.sqrt(252))
     simple_returns = close.pct_change().dropna()
     mu_arith_annual = float(simple_returns.mean() * 252)
+    last_price = float(close.iloc[-1])
 
-    return sigma_annual, mu_arith_annual
+    return sigma_annual, mu_arith_annual, last_price
 
 
 # ---------- GBM barrier-breach math ----------
@@ -234,7 +235,7 @@ def position_sizing(request):
     # 3. Fetch market data for the requested index/ticker
     try:
         lookback_days = int(round(drift_lookback_years * 252))
-        sigma, mu_arith = get_vol_and_drift(ticker, lookback_days=lookback_days)
+        sigma, mu_arith, current_price = get_vol_and_drift(ticker, lookback_days=lookback_days)
     except Exception as e:
         return jsonify({"error": f"Could not fetch data for ticker '{ticker}': {str(e)}"}), 400, cors_headers
 
@@ -263,6 +264,7 @@ def position_sizing(request):
         "driftLookbackYears": drift_lookback_years,
         "estimatedAnnualVolatility": round(sigma, 4),
         "estimatedAnnualDrift": round(mu_arith, 4),
+        "currentPrice": round(current_price, 2),
         "maxLeverage": round(max_leverage, 3),
         "recommendedPositionSize": round(position_size, 2),
         "achievedBreachProbability": round(achieved_prob, 4),
