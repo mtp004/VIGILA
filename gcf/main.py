@@ -118,7 +118,7 @@ def get_volume_and_price_data(symbols):
         return {}
 
 
-def send_alert_email(email, user_uid, alert_symbols, yesterday_alert_symbols, stock_data, today_str, last_session_str):
+def send_alert_email(email, user_uid, alert_symbols, yesterday_alert_symbols, stock_data, today_str, last_session_str, pct_threshold):
     if not alert_symbols:
         return
 
@@ -130,7 +130,7 @@ def send_alert_email(email, user_uid, alert_symbols, yesterday_alert_symbols, st
     html_body = f"""
     <html>
       <body>
-        <p>These <b>{len(alert_symbols)}</b> symbols exhibit unusual trading activity, exceeding 125% of previous session volume:</p>
+        <p>These <b>{len(alert_symbols)}</b> symbols exhibit unusual trading activity, exceeding {pct_threshold}% of previous session volume:</p>
         <br>
     """
 
@@ -158,7 +158,7 @@ def send_alert_email(email, user_uid, alert_symbols, yesterday_alert_symbols, st
     if yesterday_alert_symbols:
         html_body += f"""
         <hr>
-        <p><b>{last_session_name}'s Alert</b> - These <b>{len(yesterday_alert_symbols)}</b> symbols previously exceeded 125% of the session before's volume:</p>
+        <p><b>{last_session_name}'s Alert</b> - These <b>{len(yesterday_alert_symbols)}</b> symbols previously exceeded {pct_threshold}% of the session before's volume:</p>
         <br>
         """
 
@@ -206,7 +206,7 @@ def check_volume_alerts(request):
         return "Not a market session today", 200
 
     users_processed = 0
-    vol_ratio_threshold = 123
+    pct_threshold = 130
     all_symbols = set()
     user_symbols_map = {}
 
@@ -266,19 +266,19 @@ def check_volume_alerts(request):
             ratio = (today_vol / yesterday_vol) * 100
             previous_ratio = (yesterday_vol / day_before) * 100
 
-            if ratio >= vol_ratio_threshold:
+            if ratio >= pct_threshold:
                 alert_symbols.append(s)
                 if s not in today_timestamps:
                     should_alert = True
 
-            if previous_ratio >= vol_ratio_threshold and s not in alert_symbols:
+            if previous_ratio >= pct_threshold and s not in alert_symbols:
                 yesterday_alert_symbols.append(s)
 
         if alert_symbols and should_alert:
             send_alert_email(
                 email, user_data['uid'],
                 alert_symbols, yesterday_alert_symbols,
-                stock_data, today_str, last_session_str
+                stock_data, today_str, last_session_str, pct_threshold
             )
 
     return f"Processed {users_processed} users", 200
