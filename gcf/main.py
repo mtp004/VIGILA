@@ -32,48 +32,7 @@ def get_last_two_market_sessions():
     last_session_str = open_days[-2].strftime("%Y-%m-%d")
     return today_str, last_session_str
 
-
-def sync_timestamp_structure(user_uid, today_str):
-    user_doc_ref = db.collection('users').document(user_uid)
-    user_doc = user_doc_ref.get()
-    if not user_doc.exists:
-        return {}
-
-    data = user_doc.to_dict()
-    timestamps = (
-        data.get('indicators', {})
-            .get('Volume', {})
-            .get('cached', {})
-            .get('timestamps', {})
-    )
-
-    updates = {}
-    for date_key in list(timestamps.keys()):
-        if date_key != today_str:
-            updates[f'indicators.Volume.cached.timestamps.{date_key}'] = firestore.DELETE_FIELD
-
-    if today_str not in timestamps:
-        updates[f'indicators.Volume.cached.timestamps.{today_str}'] = {}
-
-    if updates:
-        user_doc_ref.update(updates)
-
-    return timestamps.get(today_str, {})
-
-
-def save_alerted_timestamps(user_uid, symbols, today_str, timestamp):
-    """
-    Write triggered alert timestamps into indicators.Volume.cached.timestamps.<today>
-    """
-    user_doc_ref = db.collection('users').document(user_uid)
-    updates = {
-        f'indicators.Volume.cached.timestamps.{today_str}.{symbol}': timestamp
-        for symbol in symbols
-    }
-    try:
-        user_doc_ref.update(updates)
-    except Exception as e:
-        print(f"Save failed: {e}")
+PCT_THRESHOLD = 130
 
 
 def get_volume_and_price_data(symbols):
@@ -118,9 +77,11 @@ def get_volume_and_price_data(symbols):
         return {}
 
 
-def send_alert_email(email, user_uid, alert_symbols, yesterday_alert_symbols, stock_data, today_str, last_session_str, pct_threshold):
+def send_alert_email(email, alert_symbols, yesterday_alert_symbols, stock_data, last_session_str):
     if not alert_symbols:
         return
+
+    pct_threshold = PCT_THRESHOLD
 
     today = datetime.date.today()
     current_date = today.strftime("%m/%d/%Y")
@@ -194,9 +155,6 @@ def send_alert_email(email, user_uid, alert_symbols, yesterday_alert_symbols, st
         smtp.login(SENDER_EMAIL, APP_PASSWORD)
         smtp.send_message(msg)
 
-    alert_timestamp = datetime.datetime.now(ny_tz)
-    save_alerted_timestamps(user_uid, alert_symbols, today_str, alert_timestamp)
-
 
 def check_volume_alerts(request):
     # Step 1: Check if today is an open market session
@@ -205,56 +163,54 @@ def check_volume_alerts(request):
         print("Today is not an open market session. Terminating.")
         return "Not a market session today", 200
 
-    users_processed = 0
-    pct_threshold = 130
+    # Step 2: Collect all active volume_alerts docs across all users
+    alerts_query = db.collection_group("volume_alerts").where("isActive", "==", True).stream()
+
     all_symbols = set()
-    user_symbols_map = {}
+    user_alert_docs = {}  # uid -> list of (doc_ref, symbol, last_alerted_date)
 
-    # Step 2: Collect all users and symbols
-    page = auth.list_users()
-    while page:
-        for user in page.users:
-            try:
-                user_doc = db.collection('users').document(user.uid).get()
-                if not user_doc.exists:
-                    continue
+    alerts_processed = 0
+    for doc in alerts_query:
+        data = doc.to_dict()
+        symbol = data.get("symbol")
+        if not symbol:
+            continue
 
-                volume_symbols = user_doc.to_dict().get('indicators', {}) .get('Volume', {}).get('symbols', [])
-                user_symbol_list = []
+        user_ref = doc.reference.parent.parent
+        if not user_ref:
+            continue
+        uid = user_ref.id
 
-                for symbol_obj in volume_symbols:
-                    symbol = symbol_obj.get('symbol')
-                    user_symbol_list.append(symbol)
-                    all_symbols.add(symbol)
+        all_symbols.add(symbol)
+        user_alert_docs.setdefault(uid, []).append(
+            (doc.reference, symbol, data.get("lastAlertedDate"))
+        )
+        alerts_processed += 1
 
-                user_symbols_map[user.email] = {
-                    'uid': user.uid,
-                    'symbols': user_symbol_list
-                }
-                users_processed += 1
-            except:
-                continue
-
-        page = page.get_next_page()
+    if not all_symbols:
+        return f"Processed {alerts_processed} alerts", 200
 
     # Step 3: Batch fetch all stock data
-    if not all_symbols:
-        return f"Processed {users_processed} users", 200
-
     stock_data = get_volume_and_price_data(list(all_symbols))
 
     # Step 4: Process each user
-    for email, user_data in user_symbols_map.items():
-        # Sync timestamp structure and get today's already-alerted symbols
-        today_timestamps = sync_timestamp_structure(
-            user_data['uid'], today_str)
+    updates_batch = db.batch()
+
+    for uid, alert_docs in user_alert_docs.items():
+        try:
+            user_record = auth.get_user(uid)
+            email = user_record.email
+        except Exception as e:
+            print(f"Failed to fetch user {uid}: {e}")
+            continue
 
         should_alert = False
         alert_symbols = []
         yesterday_alert_symbols = []
+        symbols_to_mark = []
 
-        for s in user_data['symbols']:
-            data = stock_data.get(s)
+        for doc_ref, symbol, last_alerted_date in alert_docs:
+            data = stock_data.get(symbol)
             if not data or len(data.get('volumes', [])) < 3:
                 continue
 
@@ -266,19 +222,26 @@ def check_volume_alerts(request):
             ratio = (today_vol / yesterday_vol) * 100
             previous_ratio = (yesterday_vol / day_before) * 100
 
-            if ratio >= pct_threshold:
-                alert_symbols.append(s)
-                if s not in today_timestamps:
+            if ratio >= PCT_THRESHOLD:
+                alert_symbols.append(symbol)
+                if last_alerted_date != today_str:
                     should_alert = True
+                    symbols_to_mark.append(doc_ref)
 
-            if previous_ratio >= pct_threshold and s not in alert_symbols:
-                yesterday_alert_symbols.append(s)
+            if previous_ratio >= PCT_THRESHOLD and symbol not in alert_symbols:
+                yesterday_alert_symbols.append(symbol)
 
         if alert_symbols and should_alert:
             send_alert_email(
-                email, user_data['uid'],
-                alert_symbols, yesterday_alert_symbols,
-                stock_data, today_str, last_session_str, pct_threshold
+                email, alert_symbols, yesterday_alert_symbols,
+                stock_data, last_session_str
             )
+            for doc_ref in symbols_to_mark:
+                updates_batch.update(doc_ref, {
+                    "lastAlertedDate": today_str,
+                    "lastCheckedAt": firestore.SERVER_TIMESTAMP,
+                })
 
-    return f"Processed {users_processed} users", 200
+    updates_batch.commit()
+
+    return f"Processed {alerts_processed} alerts", 200
