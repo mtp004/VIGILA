@@ -19,6 +19,7 @@ interface PositionSizingResult {
   driftLookbackYears: number;
   estimatedAnnualVolatility: number;
   estimatedAnnualDrift: number;
+  currentPrice: number;
   maxLeverage: number;
   recommendedPositionSize: number;
   achievedBreachProbability: number;
@@ -41,6 +42,10 @@ const PositionSizingModal = () => {
 
   const [selectedTicker, setSelectedTicker] = useState<IndexSuggestion | null>(null);
 
+  const formatShares = (positionSize: number, price: number): string => {
+    const shares = Math.round(positionSize / price);
+    return `${shares.toLocaleString()} share${shares === 1 ? "" : "s"} @ $${price.toFixed(2)}/share`;
+  };
   const handleSelectTicker = (suggestion: IndexSuggestion) => {
     setSelectedTicker(suggestion);
     clearSearch();
@@ -328,10 +333,17 @@ const PositionSizingModal = () => {
           
           <div className="d-flex flex-column gap-2" style={{ fontSize: "0.9em" }}>
             <div className="d-flex justify-content-between">
-              <span className="text-muted">Recommended Position Size:</span>
-              <span className="fw-bold">
-                ${result.recommendedPositionSize.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-              </span>
+              <span className="text-muted">Adjusted Position Size:</span>
+              <div className="text-end">
+                <span className="fw-bold">
+                  ${result.recommendedPositionSize.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </span>
+                <div>
+                  <small className="text-muted">
+                    {formatShares(result.recommendedPositionSize, result.currentPrice)}
+                  </small>
+                </div>
+              </div>
             </div>
             <div className="d-flex justify-content-between">
               <span className="text-muted">Max Leverage:</span>
@@ -366,9 +378,16 @@ const PositionSizingModal = () => {
           <div className="d-flex flex-column gap-2" style={{ fontSize: "0.9em" }}>
             <div className="d-flex justify-content-between">
               <span className="text-muted">Recommended Position Size:</span>
-              <span className="fw-bold">
-                ${result.riskRewardOptimal.positionSize.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-              </span>
+              <div className="text-end">
+                <span className="fw-bold">
+                  ${result.riskRewardOptimal.positionSize.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </span>
+                <div>
+                  <small className="text-muted">
+                    {formatShares(result.riskRewardOptimal.positionSize, result.currentPrice)}
+                  </small>
+                </div>
+              </div>
             </div>
             <div className="d-flex justify-content-between">
               <span className="text-muted">Recommended Leverage:</span>

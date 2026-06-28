@@ -2,7 +2,7 @@ import { auth } from '../../firebase'
 import { signOut } from 'firebase/auth'
 import { useState, useEffect } from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
-import { fetchUserVolumeSymbols, removeVolumeSymbol, type IndexSuggestion } from '../APIs/StockFirestore'
+import { fetchUserVolumeSymbols, removeVolumeSymbol, type VolumeAlert } from '../APIs/StockFirestore'
 import { fetchAlerts, deleteAlert, toggleAlert, type GiftCardAlert } from '../APIs/GiftcardFirestore'
 import 'bootstrap/dist/css/bootstrap.min.css'
 import 'bootstrap/dist/js/bootstrap.bundle.min.js'
@@ -11,10 +11,10 @@ export const GIFTCARD_ALERT_LIMIT = 10;
 
 export interface DashboardOutletContext {
   // stocks
-  userSymbols: IndexSuggestion[];
+  userSymbols: VolumeAlert[];
   symbolsError: string | null;
   fetchSymbols: () => Promise<void>;
-  handleRemoveSymbol: (symbolObj: IndexSuggestion) => Promise<void>;
+  handleRemoveSymbol: (symbolObj: VolumeAlert) => Promise<void>;
   
   // giftcards
   alerts: GiftCardAlert[];
@@ -31,7 +31,7 @@ const Dashboard = () => {
   const user = auth.currentUser
 
   // STOCKS
-  const [userSymbols, setUserSymbols] = useState<IndexSuggestion[]>([]);
+  const [userSymbols, setUserSymbols] = useState<VolumeAlert[]>([]);
   const [symbolsError, setSymbolsError] = useState<string | null>(null);
 
   const fetchSymbols = async () => {
@@ -43,7 +43,7 @@ const Dashboard = () => {
     }
   };
 
-  const handleRemoveSymbol = async (symbolObj: IndexSuggestion) => {
+  const handleRemoveSymbol = async (symbolObj: VolumeAlert) => {
     setUserSymbols((prev) => prev.filter((s) => s.symbol !== symbolObj.symbol));
     try {
       await removeVolumeSymbol(symbolObj);
