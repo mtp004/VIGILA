@@ -37,7 +37,7 @@ PCT_THRESHOLD = 130
 
 def get_volume_and_price_data(symbols):
     try:
-        data = yf.download(symbols, period="3d", group_by='ticker', threads=True)
+        data = yf.download(symbols, period="7d", group_by='ticker', threads=True)
         stock_data = {}
 
         for symbol in symbols:
@@ -45,53 +45,55 @@ def get_volume_and_price_data(symbols):
                 vol_data = data[symbol]['Volume']
                 close_data = data[symbol]['Close']
 
-                if len(vol_data) < 3 or len(close_data) < 3:
+                if len(vol_data) < 6 or len(close_data) < 2:
                     continue
 
                 volumes = [
                     int(vol_data.iloc[-1]),
                     int(vol_data.iloc[-2]),
-                    int(vol_data.iloc[-3])
                 ]
 
                 prices = [
                     float(close_data.iloc[-1]),
                     float(close_data.iloc[-2]),
-                    float(close_data.iloc[-3])
                 ]
+
+                ma5_yesterday = float(vol_data.iloc[-6:-1].mean())
 
                 price_change_today = prices[0] - prices[1]
                 price_change_pct_today = (price_change_today / prices[1]) * 100
 
                 stock_data[symbol] = {
                     'volumes': volumes,
+                    'ma5_yesterday': ma5_yesterday,
                     'prices': prices,
                     'price_change_today': price_change_today,
                     'price_change_pct_today': price_change_pct_today
                 }
-            except:
+            except Exception as e:
+                print(f"Failed to process {symbol}: {e}")
                 continue
 
         return stock_data
-    except:
+    except Exception as e:
+        print(f"Failed to download stock data: {e}")
         return {}
 
 
-def send_alert_email(email, alert_symbols, yesterday_alert_symbols, stock_data, last_session_str):
+def send_alert_email(email, alert_symbols, stock_data):
     if not alert_symbols:
         return
 
     pct_threshold = PCT_THRESHOLD
 
-    today = datetime.date.today()
+    today = datetime.datetime.now(ny_tz).date()
     current_date = today.strftime("%m/%d/%Y")
     today_name = today.strftime("%A")
-    last_session_name = datetime.datetime.strptime(last_session_str, "%Y-%m-%d").strftime("%A")
 
     html_body = f"""
     <html>
       <body>
-        <p>These <b>{len(alert_symbols)}</b> symbols exhibit unusual trading activity, exceeding {pct_threshold}% of previous session volume:</p>
+        <p>These <b>{len(alert_symbols)}</b> symbols exhibit unusual trading activity, exceeding {pct_threshold}% of the 5-day average volume:</p>
         <br>
     """
 
@@ -101,6 +103,7 @@ def send_alert_email(email, alert_symbols, yesterday_alert_symbols, stock_data, 
             continue
 
         vols = data['volumes']
+        ma5 = data['ma5_yesterday']
         price_change = data['price_change_today']
         price_change_pct = data['price_change_pct_today']
 
@@ -111,33 +114,10 @@ def send_alert_email(email, alert_symbols, yesterday_alert_symbols, stock_data, 
         <p><b>{symbol}</b>: <span style="color: {price_color};">{price_sign}${abs(price_change):.2f} <b>({price_sign}{abs(price_change_pct):.1f}%)</b></span></p>
         <ul>
           <li>Current Volume: {vols[0]:,}</li>
-          <li>Previous Volume: {vols[1]:,}</li>
-          <li>Volume Ratio: {(100 * vols[0] / vols[1]):.1f}%</li>
+          <li>5-Day Avg Volume: {int(ma5):,}</li>
+          <li>Volume Ratio vs 5D MA: {(100 * vols[0] / ma5):.1f}%</li>
         </ul>
         """
-
-    if yesterday_alert_symbols:
-        html_body += f"""
-        <hr>
-        <p><b>{last_session_name}'s Alert</b> - These <b>{len(yesterday_alert_symbols)}</b> symbols previously exceeded {pct_threshold}% of the session before's volume:</p>
-        <br>
-        """
-
-        for symbol in yesterday_alert_symbols:
-            data = stock_data.get(symbol)
-            if not data or len(data.get('volumes', [])) < 3:
-                continue
-
-            vols = data['volumes']
-
-            html_body += f"""
-            <p><b>{symbol}</b>:</p>
-            <ul>
-              <li>Previous Volume: {vols[1]:,}</li>
-              <li>Day Before Volume: {vols[2]:,}</li>
-              <li>Volume Ratio: {(100 * vols[1] / vols[2]):.1f}%</li>
-            </ul>
-            """
 
     html_body += """
         <br>
@@ -167,7 +147,7 @@ def check_volume_alerts(request):
     alerts_query = db.collection_group("volume_alerts").where("isActive", "==", True).stream()
 
     all_symbols = set()
-    user_alert_docs = {}  # uid -> list of (doc_ref, symbol, last_alerted_date)
+    user_alert_docs = {}
 
     alerts_processed = 0
     for doc in alerts_query:
@@ -206,21 +186,21 @@ def check_volume_alerts(request):
 
         should_alert = False
         alert_symbols = []
-        yesterday_alert_symbols = []
         symbols_to_mark = []
 
         for doc_ref, symbol, last_alerted_date in alert_docs:
             data = stock_data.get(symbol)
-            if not data or len(data.get('volumes', [])) < 3:
+            if not data or len(data.get('volumes', [])) < 2:
                 continue
 
             vols = data['volumes']
+            ma5_yesterday = data['ma5_yesterday']
             today_vol = vols[0]
-            yesterday_vol = vols[1]
-            day_before = vols[2]
 
-            ratio = (today_vol / yesterday_vol) * 100
-            previous_ratio = (yesterday_vol / day_before) * 100
+            if ma5_yesterday == 0:
+                continue
+
+            ratio = (today_vol / ma5_yesterday) * 100
 
             if ratio >= PCT_THRESHOLD:
                 alert_symbols.append(symbol)
@@ -228,14 +208,8 @@ def check_volume_alerts(request):
                     should_alert = True
                     symbols_to_mark.append(doc_ref)
 
-            if previous_ratio >= PCT_THRESHOLD and symbol not in alert_symbols:
-                yesterday_alert_symbols.append(symbol)
-
         if alert_symbols and should_alert:
-            send_alert_email(
-                email, alert_symbols, yesterday_alert_symbols,
-                stock_data, last_session_str
-            )
+            send_alert_email(email, alert_symbols, stock_data)
             for doc_ref in symbols_to_mark:
                 updates_batch.update(doc_ref, {
                     "lastAlertedDate": today_str,
