@@ -5,6 +5,7 @@ from fastapi import FastAPI, HTTPException, Response
 import firebase_admin
 from firebase_admin import firestore, auth
 from scraper_orchestrator import run_orchestrator, detect_website
+from admin_diagnostic import count_platform_results, alert_admin_on_failure
 import traceback
 
 if not firebase_admin._apps:
@@ -109,6 +110,7 @@ async def trigger_giftcard_alerts():
         scraped_results = await run_orchestrator(all_urls)
 
         # Store results by URL
+        platform_results = count_platform_results(scraped_results)
         url_results = {}
         for res in scraped_results:
             url_results[res["url"]] = {"website": res["website"], "discounts": res["discounts"]}
@@ -217,6 +219,7 @@ async def trigger_giftcard_alerts():
                 print(f"Failed to fetch or email user {uid}: {e}")
 
         print(f"--- RUN FINISHED: Emailed {users_emailed} users ---\n")
+        alert_admin_on_failure(db, platform_results)
         return {
             "status": "success",
             "brands_checked": len(brand_user_alerts),
@@ -231,9 +234,3 @@ async def trigger_giftcard_alerts():
 @app.get("/_health")
 def health_check():
     return Response(status_code=200)
-
-
-if __name__ == "__main__":
-    import uvicorn
-    port = int(os.environ.get("PORT", 8080))
-    uvicorn.run(app, host="0.0.0.0", port=port)
