@@ -15,25 +15,22 @@ ny_tz = pytz.timezone('America/New_York')
 SENDER_EMAIL = os.environ.get("SENDER_EMAIL")
 APP_PASSWORD = os.environ.get("APP_PASSWORD")
 
+PCT_THRESHOLD = 130
 
-def get_last_two_market_sessions():
+def get_market_session_today():
     """
-    Returns (today_str, last_session_str) as "YYYY-MM-DD" strings.
-    Returns (None, None) if today is not an open market session.
+    Returns today_str as a "YYYY-MM-DD" string.
+    Returns None if today is not an open market session.
     """
     today = datetime.datetime.now(ny_tz).date()
     spy = yf.download("SPY", period="10d", interval="1d", progress=False)
     open_days = spy.index.date
 
     if len(open_days) < 2 or open_days[-1] != today:
-        return None, None
+        return None
 
     today_str = today.strftime("%Y-%m-%d")
-    last_session_str = open_days[-2].strftime("%Y-%m-%d")
-    return today_str, last_session_str
-
-PCT_THRESHOLD = 130
-
+    return today_str
 
 def get_volume_and_price_data(symbols):
     try:
@@ -138,7 +135,7 @@ def send_alert_email(email, alert_symbols, stock_data):
 
 def check_volume_alerts(request):
     # Step 1: Check if today is an open market session
-    today_str, last_session_str = get_last_two_market_sessions()
+    today_str = get_market_session_today()
     if not today_str:
         print("Today is not an open market session. Terminating.")
         return "Not a market session today", 200
@@ -163,7 +160,7 @@ def check_volume_alerts(request):
 
         all_symbols.add(symbol)
         user_alert_docs.setdefault(uid, []).append(
-            (doc.reference, symbol, data.get("lastAlertedDate"))
+            (doc.reference, symbol, data.get("lastAlertTimestamp"))
         )
         alerts_processed += 1
 
@@ -188,7 +185,7 @@ def check_volume_alerts(request):
         alert_symbols = []
         symbols_to_mark = []
 
-        for doc_ref, symbol, last_alerted_date in alert_docs:
+        for doc_ref, symbol, last_alert_timestamp in alert_docs:
             data = stock_data.get(symbol)
             if not data or len(data.get('volumes', [])) < 2:
                 continue
@@ -201,19 +198,28 @@ def check_volume_alerts(request):
                 continue
 
             ratio = (today_vol / ma5_yesterday) * 100
+            print(f"[{symbol}] ratio={ratio:.1f}% (threshold={PCT_THRESHOLD}%)")
 
             if ratio >= PCT_THRESHOLD:
                 alert_symbols.append(symbol)
-                if last_alerted_date != today_str:
+
+                last_alert_date_str = None
+                if last_alert_timestamp is not None:
+                    last_alert_date_str = last_alert_timestamp.astimezone(ny_tz).strftime("%Y-%m-%d")
+
+                if last_alert_date_str != today_str:
                     should_alert = True
                     symbols_to_mark.append(doc_ref)
+                    print(f"[{symbol}] Volume spike confirmed, last_alert_date={last_alert_date_str}, will alert")
+                else:
+                    print(f"[{symbol}] Volume spike detected but already alerted today ({last_alert_date_str}), skipping")
 
         if alert_symbols and should_alert:
+            print(f"Sending email to {email} for symbols: {alert_symbols}")
             send_alert_email(email, alert_symbols, stock_data)
             for doc_ref in symbols_to_mark:
                 updates_batch.update(doc_ref, {
-                    "lastAlertedDate": today_str,
-                    "lastCheckedAt": firestore.SERVER_TIMESTAMP,
+                    "lastAlertTimestamp": firestore.SERVER_TIMESTAMP,
                 })
 
     updates_batch.commit()
