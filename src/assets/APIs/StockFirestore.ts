@@ -18,7 +18,7 @@ export interface IndexSuggestion {
 }
 
 export interface VolumeAlert extends IndexSuggestion {
-  lastAlertedDate: string | null;
+   lastAlertTimestamp: Date | null
 }
 
 function volumeAlertsRef(userId: string) {
@@ -43,7 +43,7 @@ export const addVolumeSymbols = async (symbols: IndexSuggestion[]) => {
       addDoc(volumeAlertsRef(user.uid), {
         ...s,
         isActive: true,
-        lastAlertedDate: null,
+        lastAlertTimestamp: null,
         createdAt: serverTimestamp(),
       })
     )
@@ -62,11 +62,7 @@ export const removeVolumeSymbol = async (symbolObj: IndexSuggestion) => {
   await Promise.all(snap.docs.map((d) => deleteDoc(d.ref)));
 };
 
-/**
- * Fetch the current user's volume_alerts documents as VolumeAlert objects,
- * sorted by most recent volume spike first. Alerts that have never fired
- * (lastAlertedDate is null) are sorted to the bottom.
- */
+
 export const fetchUserVolumeSymbols = async (): Promise<VolumeAlert[]> => {
   const user = auth.currentUser;
   if (!user) return [];
@@ -81,15 +77,15 @@ export const fetchUserVolumeSymbols = async (): Promise<VolumeAlert[]> => {
         currency: data.currency,
         exchange: data.exchange,
         exchangeFullName: data.exchangeFullName,
-        lastAlertedDate: data.lastAlertedDate ?? null,
+        lastAlertTimestamp: data.lastAlertTimestamp?.toDate?.() ?? null,
       };
     });
 
     return alerts.sort((a, b) => {
-      if (!a.lastAlertedDate && !b.lastAlertedDate) return 0;
-      if (!a.lastAlertedDate) return 1;
-      if (!b.lastAlertedDate) return -1;
-      return b.lastAlertedDate.localeCompare(a.lastAlertedDate);
+      if (!a.lastAlertTimestamp && !b.lastAlertTimestamp) return 0;
+      if (!a.lastAlertTimestamp) return 1;
+      if (!b.lastAlertTimestamp) return -1;
+      return b.lastAlertTimestamp.getTime() - a.lastAlertTimestamp.getTime();
     });
   } catch (err: any) {
     throw new Error(err.message);

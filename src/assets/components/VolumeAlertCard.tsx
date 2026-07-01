@@ -7,41 +7,41 @@ interface VolumeAlertCardProps {
   onRemove: (symbol: VolumeAlert) => void;
 }
 
-interface SpikeInfo {
+interface TriggerInfo {
   dateLabel: string;
   badgeLabel?: string;
   background?: string;
 }
 
-function getSpikeInfo(lastAlertedDate: string | null): SpikeInfo {
-  if (!lastAlertedDate) {
-    return {
-      dateLabel: "None",
-    };
+function getTriggerInfo(lastAlertTimestamp: Date | null): TriggerInfo {
+  if (!lastAlertTimestamp) {
+    return { dateLabel: "None" };
   }
 
-  const [year, month, day] = lastAlertedDate.split("-").map(Number);
-  const alertedDate = new Date(year, month - 1, day);
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  alertedDate.setHours(0, 0, 0, 0);
+  const now = new Date();
+  const isToday = lastAlertTimestamp.toDateString() === now.toDateString();
 
-  const daysAgo = Math.round((today.getTime() - alertedDate.getTime()) / 86400000);
+  const msAgo = now.getTime() - lastAlertTimestamp.getTime();
+  const daysAgo = Math.round(msAgo / 86_400_000);
 
-  const dateLabel = alertedDate.toLocaleDateString(undefined, {
+  const dateLabel = lastAlertTimestamp.toLocaleString(undefined, {
     month: "short",
     day: "numeric",
     year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
   });
 
+  if (isToday) {
+    return { dateLabel, badgeLabel: "Today", background: "#991b1b" };
+  }
   if (daysAgo <= 1) {
     return {
       dateLabel,
-      badgeLabel: "Today",
+      badgeLabel: `${daysAgo} days ago`,
       background: "#991b1b",
     };
   }
-
   if (daysAgo <= 7) {
     return {
       dateLabel,
@@ -49,12 +49,7 @@ function getSpikeInfo(lastAlertedDate: string | null): SpikeInfo {
       background: "#cf8430",
     };
   }
-
-  return {
-    dateLabel,
-    badgeLabel: `${daysAgo} days ago`,
-    background: "#12b21a",
-  };
+  return { dateLabel, badgeLabel: `${daysAgo} days ago`, background: "#12b21a" };
 }
 
 const VolumeAlertCard: React.FC<VolumeAlertCardProps> = ({ symbols, onRemove }) => {
@@ -63,7 +58,7 @@ const VolumeAlertCard: React.FC<VolumeAlertCardProps> = ({ symbols, onRemove }) 
   return (
     <ul className="list-group">
       {symbols.map((s) => {
-        const spike = getSpikeInfo(s.lastAlertedDate);
+        const trigger = getTriggerInfo(s.lastAlertTimestamp);
 
         return (
           <li
@@ -81,20 +76,20 @@ const VolumeAlertCard: React.FC<VolumeAlertCardProps> = ({ symbols, onRemove }) 
 
             <div className="d-flex align-items-center gap-2">
               <div className="text-muted small text-nowrap">
-                Last alert trigger: {spike.dateLabel}
+                Last alert trigger: {trigger.dateLabel}
               </div>
-              {spike.badgeLabel && (
+              {trigger.badgeLabel && (
                 <span
                   className="badge rounded-pill text-nowrap"
                   style={{
-                    background: spike.background,
+                    background: trigger.background,
                     color: "#fff",
                     fontWeight: 600,
                     fontSize: "12px",
                     padding: "5px 10px",
                   }}
                 >
-                  {spike.badgeLabel}
+                  {trigger.badgeLabel}
                 </span>
               )}
             </div>
