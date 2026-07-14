@@ -26,7 +26,7 @@ interface PositionSizingResult {
   riskRewardOptimal: RiskRewardOptimal;
 }
 
-const POSITION_SIZING_URL = "https://position-sizing-906620176597.us-central1.run.app";
+const POSITION_SIZING_URL = "https://us-central1-vigila-d6c82.cloudfunctions.net/position_sizing";
 
 const PositionSizingModal = () => {
   const {
