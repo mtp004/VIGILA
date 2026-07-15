@@ -1,8 +1,10 @@
 import pytz
 import datetime
 import yfinance as yf
+import pandas_market_calendars as mcal
 
 ny_tz = pytz.timezone('America/New_York')
+nyse = mcal.get_calendar('NYSE')
 
 def get_market_session_today():
     """
@@ -10,14 +12,12 @@ def get_market_session_today():
     Returns None if today is not an open market session.
     """
     today = datetime.datetime.now(ny_tz).date()
-    spy = yf.download("SPY", period="10d", interval="1d", progress=False)
-    open_days = spy.index.date
-
-    if len(open_days) < 2 or open_days[-1] != today:
+    schedule = nyse.schedule(start_date=today, end_date=today)
+    
+    if schedule.empty:
         return None
 
-    today_str = today.strftime("%Y-%m-%d")
-    return today_str
+    return today.strftime("%Y-%m-%d")
 
 def get_last_market_session():
     """
@@ -28,17 +28,16 @@ def get_last_market_session():
     Returns None if it can't be determined.
     """
     today = datetime.datetime.now(ny_tz).date()
-    spy = yf.download("SPY", period="10d", interval="1d", progress=False)
-    open_days = spy.index.date
-
-    if len(open_days) < 2:
+    end_date = today - datetime.timedelta(days=1)
+    start_lookback = today - datetime.timedelta(days=15)
+    
+    schedule = nyse.schedule(start_date=start_lookback, end_date=end_date)
+    open_days = schedule.index.date
+    
+    if len(open_days) == 0:
         return None
 
-    yesterday_session = open_days[-1]
-    if yesterday_session == today:
-        yesterday_session = open_days[-2]
-
-    return yesterday_session.strftime("%Y-%m-%d")
+    return open_days[-1].strftime("%Y-%m-%d")
 
 def get_volume_and_price_data_for_date(symbols, target_date):
     """
@@ -63,7 +62,12 @@ def get_volume_and_price_data_for_date(symbols, target_date):
                         idx = i
                         break
 
-                if idx is None or idx < 5:
+                if idx is None:
+                    print(f"[{symbol}] WARNING: no bar found for {target_date} in yfinance download (data gap or delay)")
+                    continue
+
+                if idx < 5:
+                    print(f"[{symbol}] Skipping {target_date}: only {idx} prior bars available (need 5 for MA)")
                     continue
 
                 volumes = [

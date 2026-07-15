@@ -1,3 +1,5 @@
 firebase-admin
 yfinance
 pandas
+pytz
+pandas_market_calendars
