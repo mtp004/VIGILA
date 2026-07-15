@@ -33,3 +33,9 @@ gcf/.env.yaml
 # firebase function
 functions/lib/
 functions/node_modules/
+
+# Python
+venv/
+__pycache__/
+*.pyc
+*.pyo

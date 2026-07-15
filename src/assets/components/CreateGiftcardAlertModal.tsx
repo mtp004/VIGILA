@@ -23,7 +23,7 @@ const DEFAULT_FORM: FormData = {
   minCardValue: 20,
   maxCardValue: 100,
   minDiscountPercent: 8.5,
-  platforms: { gcx: true, cardcash: true, carddepot: true },
+  platforms: { gcx: false, cardcash: true, carddepot: true },
   urls: { gcx: "", cardcash: "", carddepot: "" },
 };
 

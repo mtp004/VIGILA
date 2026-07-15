@@ -6,7 +6,11 @@ from email.mime.text import MIMEText
 SENDER_EMAIL = os.environ.get("SENDER_EMAIL")
 APP_PASSWORD = os.environ.get("APP_PASSWORD")
 
-PLATFORMS = ["gcx", "cardcash", "carddepot"]
+PLATFORMS = [
+    # "gcx",
+    "cardcash",
+    "carddepot",
+]
 
 def count_platform_results(scraped_results: list) -> dict:
     counts = {p: {"success": 0, "failed": 0} for p in PLATFORMS}
