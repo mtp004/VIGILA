@@ -6,9 +6,9 @@ from scipy.stats import norm
 from scipy.optimize import brentq
 import yfinance as yf
 from datetime import datetime, timedelta, timezone
+from margin_rate import get_annualized_margin_rate
 
 initialize_app()
-
 
 # ---------- Market data ----------
 
@@ -129,11 +129,13 @@ def solve_max_leverage(cash, drawdown_dollars, alpha, sigma, mu_arith, T=1.0):
     achieved_breach_prob = f(max_leverage) + alpha
     return max_leverage, achieved_breach_prob
 
-def expected_profit(cash, mu_arith, leverage, T):
-    return cash * leverage * (np.exp(mu_arith * T) - 1)
+def expected_profit(cash, mu_arith, leverage, T, margin_rate):
+    fixed_debt = cash * (leverage - 1)
+    interest_cost = fixed_debt * margin_rate * T
+    return cash * leverage * (np.exp(mu_arith * T) - 1) - interest_cost
 
 
-def risk_reward_objective(leverage, cash, drawdown_dollars, sigma, mu_arith, T):
+def risk_reward_objective(leverage, cash, drawdown_dollars, sigma, mu_arith, T, margin_rate):
     """
     Expected profit minus a leverage^2-scaled penalty weighted by breach
     probability, under the buy-and-forget leverage model.
@@ -145,14 +147,14 @@ def risk_reward_objective(leverage, cash, drawdown_dollars, sigma, mu_arith, T):
     p_breach = breach_prob_gbm(
         initial_position_value, breach_position_value, T, asset_mu_log, sigma
     )
-    profit = expected_profit(cash, mu_arith, leverage, T)
+    profit = expected_profit(cash, mu_arith, leverage, T, margin_rate)
 
     # penalty scales with leverage^2, so it overtakes profit even once
     penalty = drawdown_dollars * (leverage ** 2) * p_breach
     return profit - penalty
 
 
-def solve_optimal_leverage(cash, drawdown_dollars, sigma, mu_arith, T=1.0):
+def solve_optimal_leverage(cash, drawdown_dollars, sigma, mu_arith, margin_rate, T=1.0):
     """
     Find the leverage that maximizes expected_profit - drawdown_dollars * P(breach),
     under the buy-and-forget leverage model.
@@ -161,7 +163,7 @@ def solve_optimal_leverage(cash, drawdown_dollars, sigma, mu_arith, T=1.0):
     from scipy.optimize import minimize_scalar
 
     def neg_objective(leverage):
-        return -risk_reward_objective(leverage, cash, drawdown_dollars, sigma, mu_arith, T)
+        return -risk_reward_objective(leverage, cash, drawdown_dollars, sigma, mu_arith, T, margin_rate)
 
     lo = max(1e-4, _min_leverage_for_breach_possible(cash, drawdown_dollars))
     result = minimize_scalar(neg_objective, bounds=(lo, 50.0), method="bounded")
@@ -248,10 +250,11 @@ def position_sizing(request):
         return jsonify({"error": str(e)}), 400, cors_headers
 
     position_size = max_leverage * cash
+    margin_rate = get_annualized_margin_rate()
 
     # 5. Also compute the risk-reward optimal leverage as a secondary recommendation
     optimal_leverage, optimal_expected_value, optimal_breach_prob = solve_optimal_leverage(
-        cash, drawdown_dollars, sigma, mu_arith, T=holding_period_years
+        cash, drawdown_dollars, sigma, mu_arith, margin_rate, T=holding_period_years
     )
     optimal_position_size = optimal_leverage * cash
 
@@ -273,6 +276,7 @@ def position_sizing(request):
             "positionSize": round(optimal_position_size, 2),
             "breachProbability": round(optimal_breach_prob, 4),
             "expectedValue": round(optimal_expected_value, 2),
+            "marginRatePct": round(margin_rate * 100, 3),
         },
     }
     return jsonify(response), 200, cors_headers

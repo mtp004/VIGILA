@@ -4,3 +4,5 @@ flask
 numpy
 scipy
 yfinance
+requests
+pandas
