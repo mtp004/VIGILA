@@ -8,6 +8,7 @@ interface RiskRewardOptimal {
   positionSize: number;
   breachProbability: number;
   expectedValue: number;
+  marginRatePct: number;
 }
 
 interface PositionSizingResult {
@@ -370,10 +371,9 @@ const PositionSizingModal = () => {
           <hr />
           <h6 className="mb-3">Risk-Reward Optimized Alternative</h6>
           <p className="text-muted" style={{ fontSize: "0.85em" }}>
-            Your confidence level above targets a fixed breach probability. This
-            alternative instead maximizes expected profit minus the drawdown
-            amount weighted by its breach probability—it may suggest a
-            different leverage.
+            This alternative maximizes expected profit after simple margin interest while
+            penalizing potential drawdowns by their breach probability, so it may
+            recommend a different leverage than the confidence-based approach.
           </p>
           <div className="d-flex flex-column gap-2" style={{ fontSize: "0.9em" }}>
             <div className="d-flex justify-content-between">
@@ -392,6 +392,19 @@ const PositionSizingModal = () => {
             <div className="d-flex justify-content-between">
               <span className="text-muted">Recommended Leverage:</span>
               <span className="fw-bold">{result.riskRewardOptimal.leverage.toFixed(3)}x</span>
+            </div>
+            <div className="d-flex justify-content-between">
+              <span className="text-muted">Margin Interest Rate:</span>
+              <span>{result.riskRewardOptimal.marginRatePct.toFixed(3)}%</span>
+            </div>
+            <div className="d-flex justify-content-between">
+              <span className="text-muted">Expected Net Profit:</span>
+              <span>
+                ${result.riskRewardOptimal.expectedValue.toLocaleString(undefined, {
+                  minimumFractionDigits: 2,
+                  maximumFractionDigits: 2,
+                })}
+              </span>
             </div>
             <div className="d-flex justify-content-between">
               <span className="text-muted">Implied Breach Probability:</span>
