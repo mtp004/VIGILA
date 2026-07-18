@@ -7,7 +7,44 @@ from playwright.async_api import async_playwright
 #     "discount_pct": pct,
 #     "sale_price":   sale,
 #     "savings":      round(face - sale, 2),
-
+GCX_SESSION_DOC = ("app_config", "gcx_session")
+ 
+ 
+def load_gcx_session(db) -> dict | None:
+    """Fetch the saved GCX storage_state dict from Firestore, or None if absent/unset."""
+    if db is None:
+        return None
+    try:
+        collection, doc_id = GCX_SESSION_DOC
+        doc = db.collection(collection).document(doc_id).get()
+        if not doc.exists:
+            print("[*] No GCX session doc found in Firestore — proceeding unauthenticated.")
+            return None
+        state = doc.to_dict().get("state")
+        if not state:
+            print("[*] GCX session doc exists but has no 'state' field — proceeding unauthenticated.")
+            return None
+        return state
+    except Exception as e:
+        print(f"[-] Failed to load GCX session from Firestore: {e}")
+        return None
+ 
+ 
+def save_gcx_session(db, state: dict) -> None:
+    """Persist a refreshed GCX storage_state dict back to Firestore."""
+    if db is None or not state:
+        return
+    try:
+        from firebase_admin import firestore
+        collection, doc_id = GCX_SESSION_DOC
+        db.collection(collection).document(doc_id).set({
+            "state": state,
+            "updatedAt": firestore.SERVER_TIMESTAMP,
+        })
+        print("[*] Refreshed GCX session saved to Firestore.")
+    except Exception as e:
+        print(f"[-] Failed to save GCX session to Firestore: {e}")
+        
 async def fetch_page(url: str, context=None) -> str:
     if context:
         page = await context.new_page()
