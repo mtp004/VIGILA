@@ -7,7 +7,7 @@ SENDER_EMAIL = os.environ.get("SENDER_EMAIL")
 APP_PASSWORD = os.environ.get("APP_PASSWORD")
 
 PLATFORMS = [
-    # "gcx",
+    "gcx",
     "cardcash",
     "carddepot",
 ]

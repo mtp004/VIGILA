@@ -107,7 +107,7 @@ async def trigger_giftcard_alerts():
             if url and alert_data.get("platforms", {}).get(detect_website(url), {}).get("active", True)
         })
 
-        scraped_results = await run_orchestrator(all_urls)
+        scraped_results = await run_orchestrator(all_urls, db)
 
         # Store results by URL
         platform_results = count_platform_results(scraped_results)
