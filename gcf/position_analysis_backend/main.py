@@ -250,7 +250,7 @@ def position_sizing(request):
         return jsonify({"error": str(e)}), 400, cors_headers
 
     position_size = max_leverage * cash
-    margin_rate = get_annualized_margin_rate() + 1
+    margin_rate = get_annualized_margin_rate() + 0.01
 
     # 5. Also compute the risk-reward optimal leverage as a secondary recommendation
     optimal_leverage, optimal_expected_value, optimal_breach_prob = solve_optimal_leverage(
