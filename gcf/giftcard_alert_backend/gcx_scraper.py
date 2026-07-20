@@ -29,19 +29,30 @@ def load_gcx_session(db) -> dict | None:
         print(f"[-] Failed to load GCX session from Firestore: {e}")
         return None
  
- 
+def _scope_to_gcx(state: dict) -> dict:
+    """Keep only gcx.app cookies/localStorage from a storage_state dict."""
+    cookies = [c for c in state.get("cookies", []) if "gcx.app" in c.get("domain", "")]
+    origins = [o for o in state.get("origins", []) if "gcx.app" in o.get("origin", "")]
+    return {"cookies": cookies, "origins": origins}
+
+
 def save_gcx_session(db, state: dict) -> None:
     """Persist a refreshed GCX storage_state dict back to Firestore."""
     if db is None or not state:
         return
     try:
         from firebase_admin import firestore
+        scoped_state = _scope_to_gcx(state)
+
         collection, doc_id = GCX_SESSION_DOC
         db.collection(collection).document(doc_id).set({
-            "state": state,
+            "state": scoped_state,
             "updatedAt": firestore.SERVER_TIMESTAMP,
         })
-        print("[*] Refreshed GCX session saved to Firestore.")
+        print(
+            f"[*] Refreshed GCX session saved to Firestore "
+            f"({len(scoped_state['cookies'])} cookies, {len(scoped_state['origins'])} origin(s))."
+        )
     except Exception as e:
         print(f"[-] Failed to save GCX session to Firestore: {e}")
         
