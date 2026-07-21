@@ -64,17 +64,13 @@ async def run_orchestrator(url_list: list[str], db=None) -> list[dict]:
     pre_parsed_tasks = [{"url": url, "website": detect_website(url)} for url in url_list]
     results = []
 
-    context_kwargs = dict(
-        user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
-    )
     gcx_session = load_gcx_session(db)
     if gcx_session:
         print("[*] Loaded GCX session from Firestore.")
-        context_kwargs["storage_state"] = gcx_session
 
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True)
-        context = await browser.new_context(**context_kwargs)
+        context = await browser.new_context(storage_state=gcx_session)
         tasks = [
             asyncio.ensure_future(
                 scrape_worker(context, task["url"], task["website"], delay=i*3)
