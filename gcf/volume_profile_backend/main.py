@@ -1,14 +1,20 @@
+import datetime
+import pytz
+
 import firebase_admin
 firebase_admin.initialize_app()
 
 from firebase_admin import auth, firestore
 from volume_profile import build_volume_profile_and_price, fetch_today_bars
-from alerts_email import send_value_area_alert_email
+from alerts_email import send_vp_alert_email
 
 # Initialize Firebase
 db = firestore.client()
 
 CACHE_ROOT = "volume_profile_cache"  # doc id = symbol; also holds vp.py's months/shards subcollections
+ALERT_LOG_ROOT = "volume_profile_alert_log"  # {uid}/days/{YYYY-MM-DD} -> {"alerts": [...]}
+ALERT_LOG_DAYS_TO_KEEP = 7
+ny_tz = pytz.timezone('America/New_York')
 
 
 def _collect_active_symbols_and_users():
@@ -55,6 +61,39 @@ def _zone(price, sorted_bounds):
 
 def _save_last_price(state_ref, price):
     state_ref.set({"lastPrice": price, "updatedAt": firestore.SERVER_TIMESTAMP}, merge=True)
+
+
+def _prune_old_alert_days(uid, keep=ALERT_LOG_DAYS_TO_KEEP):
+    days_ref = db.collection(ALERT_LOG_ROOT).document(uid).collection("days")
+    doc_ids = sorted((doc.id for doc in days_ref.list_documents()), reverse=True)
+
+    for stale_id in doc_ids[keep:]:
+        days_ref.document(stale_id).delete()
+        print(f"[{uid}] Pruned stale alert log {stale_id}")
+
+
+def _log_and_get_todays_alerts(uid, new_alerts):
+    """
+    Appends this run's crossings to the user's log for today and returns
+    (earlier, new_entries): earlier is whatever was already logged today
+    before this call, new_entries is this run's crossings with symbol/time
+    folded in. Callers pass both to the email so it can show today's full
+    picture instead of just the latest crossing.
+    """
+    now = datetime.datetime.now(ny_tz)
+    date_str = now.strftime("%Y-%m-%d")
+    day_ref = db.collection(ALERT_LOG_ROOT).document(uid).collection("days").document(date_str)
+    day_doc = day_ref.get()
+    earlier = day_doc.to_dict().get("alerts", []) if day_doc.exists else []
+
+    new_entries = [
+        {**info, "symbol": symbol, "time": now.strftime("%I:%M %p")}
+        for symbol, info in new_alerts.items()
+    ]
+    day_ref.set({"alerts": firestore.ArrayUnion(new_entries)}, merge=True)
+    _prune_old_alert_days(uid)
+
+    return earlier, new_entries
 
 
 def check_volume_profile_alerts(request):
@@ -124,7 +163,8 @@ def check_volume_profile_alerts(request):
             print(f"Failed to fetch user {uid}: {e}")
             continue
 
+        earlier, new_entries = _log_and_get_todays_alerts(uid, relevant)
         print(f"Sending value-area alert to {email} for symbols: {list(relevant.keys())}")
-        send_value_area_alert_email(email, relevant)
+        send_vp_alert_email(email, new_entries, earlier)
 
     return f"Processed {len(all_symbols)} symbols, {len(crossed_symbols)} crossings", 200

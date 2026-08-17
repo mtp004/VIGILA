@@ -10,9 +10,9 @@ ny_tz = pytz.timezone('America/New_York')
 nyse = mcal.get_calendar('NYSE')
 
 MAX_MONTHS_TO_KEEP = 2                 # months subcollection: keep only the N most recent docs
-NUM_BINS = 150                        # price bins spanning the initial 15-day reference range
+NUM_BINS = 150                        # price bins spanning the initial reference range
 VALUE_AREA_PCT = 0.86                 # standard 86% value area
-MIN_TRADING_DAYS_FOR_CURRENT_MONTH = 15
+MIN_TRADING_DAYS_FOR_CURRENT_MONTH = 10
 INTRADAY_INTERVAL = "1h"
 
 # volume_profile_cache/{symbol}                    <- lastPrice/updatedAt fields, set in main.py
@@ -45,8 +45,9 @@ def _deserialize_bins(raw_bins):
     return {float(k): v for k, v in raw_bins.items()}
 
 
-def _bin_price(price, bin_width):
-    return round(round(float(price) / bin_width) * bin_width, 2)
+def _bin_index(price, bin_width):
+    """Maps a price to an integer bin index, spaced bin_width apart."""
+    return round(float(price) / bin_width)
 
 
 def fetch_today_bars(symbols):
@@ -75,7 +76,7 @@ def _extract_symbol_bars(batched_bars, symbol):
     if batched_bars is None:
         return None
     try:
-        bars = batched_bars[symbol].dropna(subset=["Close", "Volume"])
+        bars = batched_bars[symbol].dropna(subset=["High", "Low", "Close", "Volume"])
     except (KeyError, TypeError):
         return None
     return bars if not bars.empty else None
@@ -91,28 +92,49 @@ def _download_range(symbol, start_date, end_date):
     """
     end = end_date + datetime.timedelta(days=1)
     try:
-        return yf.download(
+        bars = yf.download(
             symbol, start=start_date, end=end,
-            interval=INTRADAY_INTERVAL, prepost=True, progress=False,
+            interval=INTRADAY_INTERVAL, 
+            prepost=True, progress=False,
+            multi_level_index=False,
         )
+        if bars is None or bars.empty:
+            return bars
+        return bars.dropna(subset=["High", "Low", "Close", "Volume"])
     except Exception as e:
         print(f"[{symbol}] Failed to download bars for {start_date}..{end_date}: {e}")
         return None
 
 
 def _bin_bars(bars, bin_width):
-    """Bins a bars DataFrame into per-day {price_bin: volume} shards, keyed by date string."""
-    closes = bars["Close"].to_numpy().flatten()
+    """
+    Bins a bars DataFrame into per-day {price_bin: volume} shards, keyed
+    by date string. Each bar's volume is split evenly across every price
+    bin touched by that bar's High-Low range (not just its Close), so the
+    profile reflects where price actually traded during the bar rather
+    than just where it happened to settle.
+    """
+    highs = bars["High"].to_numpy().flatten()
+    lows = bars["Low"].to_numpy().flatten()
     vols = bars["Volume"].to_numpy().flatten()
     bar_dates = bars.index.date
 
     shards_by_day = {}
-    for price, vol, bar_date in zip(closes, vols, bar_dates):
+    for high, low, vol, bar_date in zip(highs, lows, vols, bar_dates):
         if vol <= 0:
             continue
+
+        lo_idx = _bin_index(low, bin_width)
+        hi_idx = _bin_index(high, bin_width)
+        if hi_idx < lo_idx:
+            lo_idx, hi_idx = hi_idx, lo_idx
+
         day_shard = shards_by_day.setdefault(bar_date.strftime("%Y-%m-%d"), {})
-        bin_key = _bin_price(price, bin_width)
-        day_shard[bin_key] = day_shard.get(bin_key, 0) + int(vol)
+        num_touched = hi_idx - lo_idx + 1
+        vol_per_bin = float(vol) / num_touched
+        for idx in range(lo_idx, hi_idx + 1):
+            bin_key = round(idx * bin_width, 2)
+            day_shard[bin_key] = day_shard.get(bin_key, 0) + vol_per_bin
 
     return shards_by_day
 
@@ -177,8 +199,7 @@ def _get_or_build_month_base(symbol, year, month, days_so_far):
             print(f"[{symbol}] No bars available to build initial base for {year}-{month:02d}")
             return None, None
 
-        closes = bars["Close"].to_numpy().flatten()
-        bin_width = max(0.01, round(float(closes.max() - closes.min()) / NUM_BINS, 2))
+        bin_width = max(0.01, round(float(bars["High"].max() - bars["Low"].min()) / NUM_BINS, 2))
 
         shards_by_day = _bin_bars(bars, bin_width)
 
@@ -260,10 +281,11 @@ def build_volume_profile_and_price(symbol, today_bars=None):
     """
     Returns (vp, current_price) where vp is {"poc", "val", "vah"}, using
     whichever month (current or previous) is the valid reference per the
-    ">=15 trading days" rule. `today_bars` should be the raw batched
-    download from fetch_today_bars() covering every symbol — this
-    function slices out its own symbol's data internally. Pass None to
-    skip today's price/shard entirely (e.g. testing off-hours).
+    ">=MIN_TRADING_DAYS_FOR_CURRENT_MONTH trading days" rule. `today_bars`
+    should be the raw batched download from fetch_today_bars() covering
+    every symbol — this function slices out its own symbol's data
+    internally. Pass None to skip today's price/shard entirely (e.g.
+    testing off-hours).
     Returns None if there isn't enough data to compute anything at all.
     """
     today = datetime.datetime.now(ny_tz).date()

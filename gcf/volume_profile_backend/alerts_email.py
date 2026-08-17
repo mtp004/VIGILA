@@ -42,38 +42,70 @@ def _crossing_description(info):
     )
 
 
-def send_value_area_alert_email(email, crossed_symbols):
+def _short_crossing_label(info):
+    crossed = _crossed_boundary_names(info["from_zone"], info["to_zone"])
+    boundary = crossed[-1] if _is_upward(info) else crossed[0]
+    direction = "above" if _is_upward(info) else "below"
+    return f"{info['time']} {direction} {boundary}"
+
+
+def _symbol_block(symbol, entries, is_new):
+    entries = sorted(entries, key=lambda e: datetime.datetime.strptime(e["time"], "%I:%M %p"))
+    latest = entries[-1]
+    count = f" ({len(entries)}x)" if len(entries) > 1 else ""
+
+    if is_new:
+        color = "green" if _is_upward(latest) else "red"
+        newest_label = f'<span style="color: {color};">{latest["time"]} {_crossing_description(latest)}</span>'
+    else:
+        newest_label = _short_crossing_label(latest)
+
+    trail = " &rarr; ".join([_short_crossing_label(e) for e in entries[:-1]] + [newest_label])
+    header = f'<p><b>{symbol}</b>{count}: {trail}</p>'
+
+    if not is_new:
+        return header
+
+    return header + f"""
+    <ul>
+      <li>Price: ${latest['price']:.2f}</li>
+      <li>Now in: {_zone_label(latest['to_zone'])}</li>
+      <li>VAL: ${latest['val']:.2f}</li>
+      <li>POC: ${latest['poc']:.2f}</li>
+      <li>VAH: ${latest['vah']:.2f}</li>
+    </ul>
     """
-    crossed_symbols: {symbol: {"from_zone", "to_zone", "price", "val", "poc", "vah"}}
+
+
+def send_vp_alert_email(email, new_alerts, earlier_alerts=None):
     """
-    if not crossed_symbols:
+    new_alerts: [{"symbol", "from_zone", "to_zone", "price", "val", "poc", "vah", "time"}, ...]
+    earlier_alerts: same shape, alerts already logged today before this run.
+    """
+    if not new_alerts:
         return
+    earlier_alerts = earlier_alerts or []
+    new_symbols = {info["symbol"] for info in new_alerts}
+
+    by_symbol = {}
+    for info in earlier_alerts + new_alerts:
+        by_symbol.setdefault(info["symbol"], []).append(info)
 
     now = datetime.datetime.now(ny_tz)
     current_date = now.strftime("%m/%d/%Y")
     today_name = now.strftime("%A")
+    total_today = len(earlier_alerts) + len(new_alerts)
 
     html_body = f"""
     <html>
       <body>
-        <p><b>{len(crossed_symbols)}</b> symbol(s) crossed a value-area boundary:</p>
+        <p><b>{len(new_alerts)}</b> new crossing(s)
+        ({total_today} total today):</p>
         <br>
     """
 
-    for symbol, info in crossed_symbols.items():
-        color = "green" if _is_upward(info) else "red"
-        description = _crossing_description(info)
-
-        html_body += f"""
-        <p><b>{symbol}</b>: <span style="color: {color};">{description}</span></p>
-        <ul>
-          <li>Current Price: ${info['price']:.2f}</li>
-          <li>Now in: {_zone_label(info['to_zone'])}</li>
-          <li>VAL: ${info['val']:.2f}</li>
-          <li>POC: ${info['poc']:.2f}</li>
-          <li>VAH: ${info['vah']:.2f}</li>
-        </ul>
-        """
+    for symbol, entries in by_symbol.items():
+        html_body += _symbol_block(symbol, entries, is_new=symbol in new_symbols)
 
     html_body += """
         <br>
@@ -83,7 +115,7 @@ def send_value_area_alert_email(email, crossed_symbols):
     """
 
     msg = MIMEText(html_body, 'html')
-    msg['Subject'] = f"{today_name}'s Value Area Alert - {current_date}"
+    msg['Subject'] = f"{today_name}'s POI Alert - {current_date}"
     msg['From'] = SENDER_EMAIL
     msg['To'] = email
 
