@@ -12,8 +12,7 @@ from alerts_email import send_vp_alert_email
 db = firestore.client()
 
 CACHE_ROOT = "volume_profile_cache"  # doc id = symbol; also holds vp.py's months/shards subcollections
-ALERT_LOG_ROOT = "volume_profile_alert_log"  # {uid}/days/{YYYY-MM-DD} -> {"alerts": [...]}
-ALERT_LOG_DAYS_TO_KEEP = 7
+ALERT_LOG_DAYS_TO_KEEP = 7  # volume_profile_cache/{symbol}/alert_log/{YYYY-MM-DD} -> {"alerts": [...]}
 ny_tz = pytz.timezone('America/New_York')
 
 
@@ -63,37 +62,43 @@ def _save_last_price(state_ref, price):
     state_ref.set({"lastPrice": price, "updatedAt": firestore.SERVER_TIMESTAMP}, merge=True)
 
 
-def _prune_old_alert_days(uid, keep=ALERT_LOG_DAYS_TO_KEEP):
-    days_ref = db.collection(ALERT_LOG_ROOT).document(uid).collection("days")
-    doc_ids = sorted((doc.id for doc in days_ref.list_documents()), reverse=True)
+def _symbol_log_ref(symbol, date_str):
+    return db.collection(CACHE_ROOT).document(symbol).collection("alert_log").document(date_str)
+
+
+def _prune_old_alert_days(symbol, keep=ALERT_LOG_DAYS_TO_KEEP):
+    log_ref = db.collection(CACHE_ROOT).document(symbol).collection("alert_log")
+    doc_ids = sorted((doc.id for doc in log_ref.list_documents()), reverse=True)
 
     for stale_id in doc_ids[keep:]:
-        days_ref.document(stale_id).delete()
-        print(f"[{uid}] Pruned stale alert log {stale_id}")
+        log_ref.document(stale_id).delete()
+        print(f"[{symbol}] Pruned stale alert log {stale_id}")
 
 
-def _log_and_get_todays_alerts(uid, new_alerts):
+def _log_symbol_alert(symbol, info, now):
     """
-    Appends this run's crossings to the user's log for today and returns
-    (earlier, new_entries): earlier is whatever was already logged today
-    before this call, new_entries is this run's crossings with symbol/time
-    folded in. Callers pass both to the email so it can show today's full
-    picture instead of just the latest crossing.
+    Appends this run's alerts to the symbol's shared log for today and
+    returns (earlier, entry): earlier is whatever was already logged for
+    this symbol today before this call, entry is this alert with
+    symbol/time folded in. Called once per triggered symbol regardless of
+    how many users are subscribed to it, since the alert itself is
+    identical for all of them.
     """
-    now = datetime.datetime.now(ny_tz)
     date_str = now.strftime("%Y-%m-%d")
-    day_ref = db.collection(ALERT_LOG_ROOT).document(uid).collection("days").document(date_str)
-    day_doc = day_ref.get()
-    earlier = day_doc.to_dict().get("alerts", []) if day_doc.exists else []
+    log_ref = _symbol_log_ref(symbol, date_str)
+    log_doc = log_ref.get()
+    earlier = log_doc.to_dict().get("alerts", []) if log_doc.exists else []
 
-    new_entries = [
-        {**info, "symbol": symbol, "time": now.strftime("%I:%M %p")}
-        for symbol, info in new_alerts.items()
-    ]
-    day_ref.set({"alerts": firestore.ArrayUnion(new_entries)}, merge=True)
-    _prune_old_alert_days(uid)
+    entry = {**info, "symbol": symbol, "time": now.strftime("%I:%M %p")}
+    log_ref.set({"alerts": firestore.ArrayUnion([entry])}, merge=True)
+    _prune_old_alert_days(symbol)
 
-    return earlier, new_entries
+    return earlier, entry
+
+
+def _get_symbol_alerts_today(symbol, date_str):
+    log_doc = _symbol_log_ref(symbol, date_str).get()
+    return log_doc.to_dict().get("alerts", []) if log_doc.exists else []
 
 
 def check_volume_profile_alerts(request):
@@ -101,7 +106,7 @@ def check_volume_profile_alerts(request):
     if not all_symbols:
         return "No active symbols", 200
 
-    crossed_symbols = {}
+    triggered_symbols = {}
     today_bars = fetch_today_bars(all_symbols)
 
     for symbol in all_symbols:
@@ -138,7 +143,7 @@ def check_volume_profile_alerts(request):
                 f"(price {last_price} -> {current_price}, "
                 f"VAL={vp['val']} POC={vp['poc']} VAH={vp['vah']})"
             )
-            crossed_symbols[symbol] = {
+            triggered_symbols[symbol] = {
                 "from_zone": from_zone,
                 "to_zone": to_zone,
                 "price": current_price,
@@ -149,12 +154,25 @@ def check_volume_profile_alerts(request):
         else:
             print(f"[{symbol}] No zone change (zone={to_zone}, price={current_price})")
 
-    if not crossed_symbols:
-        return f"Processed {len(all_symbols)} symbols, no crossings", 200
+    if not triggered_symbols:
+        return f"Processed {len(all_symbols)} symbols, no alerts", 200
+
+    now = datetime.datetime.now(ny_tz)
+    date_str = now.strftime("%Y-%m-%d")
+
+    symbol_earlier = {}
+    symbol_new_entry = {}
+    for symbol in all_symbols:
+        if symbol in triggered_symbols:
+            earlier, entry = _log_symbol_alert(symbol, triggered_symbols[symbol], now)
+            symbol_earlier[symbol] = earlier
+            symbol_new_entry[symbol] = entry
+        else:
+            symbol_earlier[symbol] = _get_symbol_alerts_today(symbol, date_str)
 
     for uid, symbols in user_symbols.items():
-        relevant = {s: crossed_symbols[s] for s in symbols if s in crossed_symbols}
-        if not relevant:
+        new_entries = [symbol_new_entry[s] for s in symbols if s in symbol_new_entry]
+        if not new_entries:
             continue
         try:
             user_record = auth.get_user(uid)
@@ -163,8 +181,8 @@ def check_volume_profile_alerts(request):
             print(f"Failed to fetch user {uid}: {e}")
             continue
 
-        earlier, new_entries = _log_and_get_todays_alerts(uid, relevant)
-        print(f"Sending value-area alert to {email} for symbols: {list(relevant.keys())}")
-        send_vp_alert_email(email, new_entries, earlier)
+        earlier_alerts = [a for s in symbols for a in symbol_earlier.get(s, [])]
+        print(f"Sending value-area alert to {email} for symbols: {[e['symbol'] for e in new_entries]}")
+        send_vp_alert_email(email, new_entries, earlier_alerts)
 
-    return f"Processed {len(all_symbols)} symbols, {len(crossed_symbols)} crossings", 200
+    return f"Processed {len(all_symbols)} symbols, {len(triggered_symbols)} alerts", 200
