@@ -1,17 +1,23 @@
 import { useState } from "react";
 import { useOutletContext } from "react-router-dom";
 import VolumeModal from "./VolumeModal";
+import VolumeProfileModal from "./VolumeProfileModal";
 import PositionSizingModal from "./PositionSizingModal";
 import VolumeAlertCard from "./VolumeAlertCard";
+import VolumeProfileAlertCard from "./VolumeProfileAlertCard";
 import { type DashboardOutletContext } from "./Dashboard";
 
 const StockAlertPage = () => {
-  const { userSymbols, symbolsError, fetchSymbols, handleRemoveSymbol } =
-    useOutletContext<DashboardOutletContext>();
+  const {
+    userSymbols, symbolsError, fetchSymbols, handleRemoveSymbol,
+    userProfileSymbols, profileSymbolsError, fetchProfileSymbols, handleRemoveProfileSymbol,
+  } = useOutletContext<DashboardOutletContext>();
 
   const [showVolumePopup, setShowVolumePopup] = useState(false);
+  const [showVolumeProfilePopup, setShowVolumeProfilePopup] = useState(false);
   const [showPositionSizingPopup, setShowPositionSizingPopup] = useState(false);
   const [volumeSectionExpanded, setVolumeSectionExpanded] = useState(true);
+  const [volumeProfileSectionExpanded, setVolumeProfileSectionExpanded] = useState(true);
 
   return (
     <div className="vh-100 d-flex flex-column">
@@ -36,6 +42,16 @@ const StockAlertPage = () => {
                 &bull; Volume
               </a>
             </li>
+            <li>
+              <a
+                className="dropdown-item"
+                href="#"
+                style={{ paddingLeft: "2rem" }}
+                onClick={(e) => { e.preventDefault(); setShowVolumeProfilePopup(true); }}
+              >
+                &bull; Volume Profile
+              </a>
+            </li>
             <li><hr className="dropdown-divider" /></li>
             <li>
               <h6 className="dropdown-header" style={{ fontWeight: 700, color: "var(--bs-body-color, #212529)", textDecoration: "underline" }}>
@@ -56,7 +72,7 @@ const StockAlertPage = () => {
         </div>
       </div>
 
-      <div className="flex-grow-1 overflow-hidden mt-4 mx-4 d-flex flex-column">
+      <div className="flex-grow-1 overflow-auto mt-4 mx-4 d-flex flex-column">
         <button
           type="button"
           className="btn d-flex align-items-center gap-2 px-0 mb-2"
@@ -89,8 +105,45 @@ const StockAlertPage = () => {
         {symbolsError && <div className="text-danger mb-2">{symbolsError}</div>}
 
         {volumeSectionExpanded && (
-          <div className="flex-grow-1 overflow-auto">
+          <div className="mb-4">
             <VolumeAlertCard symbols={userSymbols} onRemove={handleRemoveSymbol} />
+          </div>
+        )}
+
+        <button
+          type="button"
+          className="btn d-flex align-items-center gap-2 px-0 mb-2"
+          style={{ width: "fit-content", color: "inherit" }}
+          onClick={() => setVolumeProfileSectionExpanded((prev) => !prev)}
+          aria-expanded={volumeProfileSectionExpanded}
+        >
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 16 16"
+            fill="none"
+            style={{
+              transition: "transform 0.15s ease",
+              transform: volumeProfileSectionExpanded ? "rotate(90deg)" : "rotate(0deg)",
+            }}
+            aria-hidden="true"
+          >
+            <path
+              d="M6 3l5 5-5 5"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+          <h5 className="mb-0">Volume Profile Alerts</h5>
+        </button>
+
+        {profileSymbolsError && <div className="text-danger mb-2">{profileSymbolsError}</div>}
+
+        {volumeProfileSectionExpanded && (
+          <div className="mb-4">
+            <VolumeProfileAlertCard symbols={userProfileSymbols} onRemove={handleRemoveProfileSymbol} />
           </div>
         )}
       </div>
@@ -109,6 +162,28 @@ const StockAlertPage = () => {
                   <VolumeModal
                     onAddSuccess={fetchSymbols}
                     existingSymbols={new Set(userSymbols.map(s => s.symbol))}
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
+      {showVolumeProfilePopup && (
+        <>
+          <div className="modal-backdrop show"></div>
+          <div className="modal d-block" tabIndex={-1}>
+            <div className="modal-dialog modal-dialog-centered">
+              <div className="modal-content">
+                <div className="modal-header">
+                  <h5 className="modal-title">Volume Profile</h5>
+                  <button type="button" className="btn-close" onClick={() => setShowVolumeProfilePopup(false)}></button>
+                </div>
+                <div className="modal-body">
+                  <VolumeProfileModal
+                    onAddSuccess={fetchProfileSymbols}
+                    existingSymbols={new Set(userProfileSymbols.map(s => s.symbol))}
                   />
                 </div>
               </div>

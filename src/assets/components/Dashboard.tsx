@@ -3,6 +3,7 @@ import { signOut } from 'firebase/auth'
 import { useState, useEffect } from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
 import { fetchUserVolumeSymbols, removeVolumeSymbol, type VolumeAlert } from '../APIs/StockFirestore'
+import { fetchUserVolumeProfileSymbols, removeVolumeProfileSymbol, type VolumeProfileAlert } from '../APIs/VolumeProfileFirestore'
 import { fetchAlerts, deleteAlert, toggleAlert, type GiftCardAlert } from '../APIs/GiftcardFirestore'
 import 'bootstrap/dist/css/bootstrap.min.css'
 import 'bootstrap/dist/js/bootstrap.bundle.min.js'
@@ -10,12 +11,18 @@ import 'bootstrap/dist/js/bootstrap.bundle.min.js'
 export const GIFTCARD_ALERT_LIMIT = 10;
 
 export interface DashboardOutletContext {
-  // stocks
+  // stocks - volume
   userSymbols: VolumeAlert[];
   symbolsError: string | null;
   fetchSymbols: () => Promise<void>;
   handleRemoveSymbol: (symbolObj: VolumeAlert) => Promise<void>;
-  
+
+  // stocks - volume profile
+  userProfileSymbols: VolumeProfileAlert[];
+  profileSymbolsError: string | null;
+  fetchProfileSymbols: () => Promise<void>;
+  handleRemoveProfileSymbol: (symbolObj: VolumeProfileAlert) => Promise<void>;
+
   // giftcards
   alerts: GiftCardAlert[];
   alertsLoading: boolean;
@@ -30,7 +37,7 @@ export interface DashboardOutletContext {
 const Dashboard = () => {
   const user = auth.currentUser
 
-  // STOCKS
+  // STOCKS - VOLUME
   const [userSymbols, setUserSymbols] = useState<VolumeAlert[]>([]);
   const [symbolsError, setSymbolsError] = useState<string | null>(null);
 
@@ -52,7 +59,32 @@ const Dashboard = () => {
       setSymbolsError(err.message);
     }
   };
-  // STOCKS
+  // STOCKS - VOLUME
+
+
+  // STOCKS - VOLUME PROFILE
+  const [userProfileSymbols, setUserProfileSymbols] = useState<VolumeProfileAlert[]>([]);
+  const [profileSymbolsError, setProfileSymbolsError] = useState<string | null>(null);
+
+  const fetchProfileSymbols = async () => {
+    try {
+      const symbols = await fetchUserVolumeProfileSymbols();
+      setUserProfileSymbols(symbols);
+    } catch (err: any) {
+      setProfileSymbolsError(err.message);
+    }
+  };
+
+  const handleRemoveProfileSymbol = async (symbolObj: VolumeProfileAlert) => {
+    setUserProfileSymbols((prev) => prev.filter((s) => s.symbol !== symbolObj.symbol));
+    try {
+      await removeVolumeProfileSymbol(symbolObj);
+    } catch (err: any) {
+      setUserProfileSymbols((prev) => [...prev, symbolObj]);
+      setProfileSymbolsError(err.message);
+    }
+  };
+  // STOCKS - VOLUME PROFILE
 
 
   // GIFTCARDS
@@ -102,6 +134,7 @@ const Dashboard = () => {
 
   useEffect(() => {
     fetchSymbols();
+    fetchProfileSymbols();
     loadAlerts();
   }, []);
 
@@ -138,6 +171,7 @@ const Dashboard = () => {
       <div className="flex-grow-1">
         <Outlet context={{
           userSymbols, symbolsError, fetchSymbols, handleRemoveSymbol,
+          userProfileSymbols, profileSymbolsError, fetchProfileSymbols, handleRemoveProfileSymbol,
           alerts, alertsLoading, alertsError, setAlertsError, loadAlerts, handleToggle, handleDelete, alertLimitReached: alerts.length >= GIFTCARD_ALERT_LIMIT
         } satisfies DashboardOutletContext} />
       </div>

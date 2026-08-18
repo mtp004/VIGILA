@@ -11,7 +11,7 @@ nyse = mcal.get_calendar('NYSE')
 
 MAX_MONTHS_TO_KEEP = 2                 # months subcollection: keep only the N most recent docs
 NUM_BINS = 150                        # price bins spanning the initial reference range
-VALUE_AREA_PCT = 0.86                 # standard 86% value area
+VALUE_AREA_PCT = 0.70                 # standard 86% value area
 MIN_TRADING_DAYS_FOR_CURRENT_MONTH = 10
 INTRADAY_INTERVAL = "1h"
 

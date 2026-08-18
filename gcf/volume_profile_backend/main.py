@@ -18,11 +18,14 @@ ny_tz = pytz.timezone('America/New_York')
 
 def _collect_active_symbols_and_users():
     """
-    Same source as the volume-alert list: every active volume_alerts doc
-    across all users. Returns (all_symbols, user_symbols) where
-    user_symbols maps uid -> set(symbol) for that user's active alerts.
+    Every volume_profile_alerts doc across all users -- its own
+    subscription list, separate from the plain volume_alerts collection.
+    No isActive field: there's no toggle for this alert type, only
+    delete, so a doc's existence is the only signal. Returns
+    (all_symbols, user_symbols) where user_symbols maps
+    uid -> set(symbol) for that user's volume profile alerts.
     """
-    alerts_query = db.collection_group("volume_alerts").where("isActive", "==", True).stream()
+    alerts_query = db.collection_group("volume_profile_alerts").stream()
 
     all_symbols = set()
     user_symbols = {}
@@ -152,7 +155,10 @@ def check_volume_profile_alerts(request):
                 "vah": vp["vah"],
             }
         else:
-            print(f"[{symbol}] No zone change (zone={to_zone}, price={current_price})")
+            print(
+                f"[{symbol}] No zone change (zone={to_zone}, price={current_price}, "
+                f"VAL={vp['val']} POC={vp['poc']} VAH={vp['vah']})"
+            )
 
     if not triggered_symbols:
         return f"Processed {len(all_symbols)} symbols, no alerts", 200
