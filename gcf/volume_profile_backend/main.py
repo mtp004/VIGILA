@@ -11,7 +11,7 @@ from alerts_email import send_vp_alert_email
 # Initialize Firebase
 db = firestore.client()
 
-CACHE_ROOT = "volume_profile_cache"  # doc id = symbol; also holds vp.py's months/shards subcollections
+CACHE_ROOT = "volume_profile_cache"  # doc id = symbol; also holds volume_profile.py's quarters subcollection
 ALERT_LOG_DAYS_TO_KEEP = 7  # volume_profile_cache/{symbol}/alert_log/{YYYY-MM-DD} -> {"alerts": [...]}
 ny_tz = pytz.timezone('America/New_York')
 
@@ -134,7 +134,7 @@ def check_volume_profile_alerts(request):
             continue
 
         # Classify both prices against TODAY's boundaries, so a boundary
-        # shift (e.g. month rollover onto a new base VP) never looks like
+        # shift (e.g. quarter rollover onto a new base VP) never looks like
         # a price cross that didn't actually happen.
         from_zone = _zone(last_price, bounds)
         to_zone = _zone(current_price, bounds)

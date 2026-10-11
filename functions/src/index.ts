@@ -40,7 +40,7 @@ export const beforeCreate = beforeUserCreated(async (event) => {
 /**
  * Fires whenever a user's volume_profile_alerts doc is deleted. If no
  * other user still has an alert for that symbol, clears its entry in
- * the shared volume_profile_cache (the month-base histogram and its
+ * the shared volume_profile_cache (the quarter-base histogram and its
  * alert log) -- nothing would ever read or refresh it otherwise.
  *
  * Runs with the Admin SDK, so it needs no client-facing Firestore rule
@@ -65,13 +65,13 @@ export const cleanupOrphanedVolumeProfileCache = onDocumentDeleted(
 
     const cacheDocRef = db.collection("volume_profile_cache").doc(symbol);
 
-    const [monthsSnap, logSnap] = await Promise.all([
-      cacheDocRef.collection("months").get(),
+    const [quartersSnap, logSnap] = await Promise.all([
+      cacheDocRef.collection("quarters").get(),
       cacheDocRef.collection("alert_log").get(),
     ]);
 
     const batch = db.batch();
-    monthsSnap.docs.forEach((d) => batch.delete(d.ref));
+    quartersSnap.docs.forEach((d) => batch.delete(d.ref));
     logSnap.docs.forEach((d) => batch.delete(d.ref));
     batch.delete(cacheDocRef);
 
