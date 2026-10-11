@@ -9,14 +9,14 @@ db = firestore.client()
 ny_tz = pytz.timezone('America/New_York')
 nyse = mcal.get_calendar('NYSE')
 
-MAX_MONTHS_TO_KEEP = 2                 # months subcollection: keep only the N most recent docs
-NUM_BINS = 150                        # price bins spanning the initial reference range
+MAX_QUARTERS_TO_KEEP = 2               # quarters subcollection: keep only the N most recent docs
+NUM_BINS = 200                        # price bins spanning the initial reference range
 VALUE_AREA_PCT = 0.70                 # standard 86% value area
-MIN_TRADING_DAYS_FOR_CURRENT_MONTH = 10
+MIN_TRADING_DAYS_FOR_CURRENT_QUARTER = 20
 INTRADAY_INTERVAL = "1h"
 
-# volume_profile_cache/{symbol}                    <- lastPrice/updatedAt fields, set in main.py
-# volume_profile_cache/{symbol}/months/{YYYY-MM}    <- cumulative month-base histogram
+# volume_profile_cache/{symbol}                      <- lastPrice/updatedAt fields, set in main.py
+# volume_profile_cache/{symbol}/quarters/{YYYY-Qn}    <- cumulative quarter-base histogram
 CACHE_ROOT = "volume_profile_cache"
 
 
@@ -24,17 +24,17 @@ def _symbol_doc(symbol):
     return db.collection(CACHE_ROOT).document(symbol)
 
 
-def _month_doc(symbol, year, month):
-    return _symbol_doc(symbol).collection("months").document(f"{year}-{month:02d}")
+def _quarter_doc(symbol, year, quarter):
+    return _symbol_doc(symbol).collection("quarters").document(f"{year}-Q{quarter}")
 
 
-def _prune_old_months(symbol, keep=MAX_MONTHS_TO_KEEP):
-    months_ref = _symbol_doc(symbol).collection("months")
-    doc_ids = sorted((doc.id for doc in months_ref.list_documents()), reverse=True)
+def _prune_old_quarters(symbol, keep=MAX_QUARTERS_TO_KEEP):
+    quarters_ref = _symbol_doc(symbol).collection("quarters")
+    doc_ids = sorted((doc.id for doc in quarters_ref.list_documents()), reverse=True)
 
     for stale_id in doc_ids[keep:]:
-        months_ref.document(stale_id).delete()
-        print(f"[{symbol}] Pruned stale month cache {stale_id}")
+        quarters_ref.document(stale_id).delete()
+        print(f"[{symbol}] Pruned stale quarter cache {stale_id}")
 
 
 def _serialize_bins(bins):
@@ -86,7 +86,7 @@ def _download_range(symbol, start_date, end_date):
     """
     Downloads hourly bars for a single symbol over [start_date, end_date]
     inclusive, including pre/post market so after-hours volume isn't
-    dropped. Used for month-base building/extension, where each symbol
+    dropped. Used for quarter-base building/extension, where each symbol
     can need a different date range. Returns the raw DataFrame (may be
     empty), or None on failure.
     """
@@ -149,7 +149,7 @@ def _merge_shards(shards):
     return merged
 
 
-def _save_month_base(doc_ref, bins, bin_width, covered_through):
+def _save_quarter_base(doc_ref, bins, bin_width, covered_through):
     doc_ref.set({
         "bins": _serialize_bins(bins),
         "binWidth": bin_width,
@@ -158,26 +158,32 @@ def _save_month_base(doc_ref, bins, bin_width, covered_through):
     })
 
 
-def _trading_days_in_month(year, month, before_date=None):
-    start = datetime.date(year, month, 1)
-    end = datetime.date(year, month, calendar.monthrange(year, month)[1])
+def _quarter_of(date):
+    return (date.month - 1) // 3 + 1
+
+
+def _trading_days_in_quarter(year, quarter, before_date=None):
+    first_month = 3 * (quarter - 1) + 1
+    last_month = first_month + 2
+    start = datetime.date(year, first_month, 1)
+    end = datetime.date(year, last_month, calendar.monthrange(year, last_month)[1])
     days = list(nyse.schedule(start_date=start, end_date=end).index.date)
     return [d for d in days if before_date is None or d < before_date]
 
 
-def _prev_month(year, month):
-    return (year - 1, 12) if month == 1 else (year, month - 1)
+def _prev_quarter(year, quarter):
+    return (year - 1, 4) if quarter == 1 else (year, quarter - 1)
 
 
-def _get_or_build_month_base(symbol, year, month, days_so_far):
+def _get_or_build_quarter_base(symbol, year, quarter, days_so_far):
     """
     Cached, cumulatively-extending VP covering every CLOSED trading day of
-    the month so far: day 1 through the most recent day in `days_so_far`
-    (which excludes today for the current month, or is the full month for
-    a completed prior month).
+    the quarter so far: day 1 through the most recent day in `days_so_far`
+    (which excludes today for the current quarter, or is the full quarter
+    for a completed prior quarter).
 
-    First call each month builds an initial base from the first
-    MIN_TRADING_DAYS_FOR_CURRENT_MONTH days and fixes bin_width from that
+    First call each quarter builds an initial base from the first
+    MIN_TRADING_DAYS_FOR_CURRENT_QUARTER days and fixes bin_width from that
     range. Every call after that compares the doc's stored
     coveredThroughDate to the latest day in `days_so_far`; if a new day has
     closed since, it's fetched, binned with the SAME stored bin_width (so
@@ -186,17 +192,17 @@ def _get_or_build_month_base(symbol, year, month, days_so_far):
 
     Returns (merged_hist, bin_width) or (None, None).
     """
-    doc_ref = _month_doc(symbol, year, month)
+    doc_ref = _quarter_doc(symbol, year, quarter)
     doc = doc_ref.get()
 
     if not doc.exists:
-        init_days = days_so_far[:MIN_TRADING_DAYS_FOR_CURRENT_MONTH]
-        if len(init_days) < MIN_TRADING_DAYS_FOR_CURRENT_MONTH:
+        init_days = days_so_far[:MIN_TRADING_DAYS_FOR_CURRENT_QUARTER]
+        if len(init_days) < MIN_TRADING_DAYS_FOR_CURRENT_QUARTER:
             return None, None
 
         bars = _download_range(symbol, init_days[0], init_days[-1])
         if bars is None or bars.empty:
-            print(f"[{symbol}] No bars available to build initial base for {year}-{month:02d}")
+            print(f"[{symbol}] No bars available to build initial base for {year}-Q{quarter}")
             return None, None
 
         bin_width = max(0.01, round(float(bars["High"].max() - bars["Low"].min()) / NUM_BINS, 2))
@@ -205,8 +211,8 @@ def _get_or_build_month_base(symbol, year, month, days_so_far):
 
         base_bins = _merge_shards(shards_by_day.values())
         covered_through = init_days[-1].strftime("%Y-%m-%d")
-        _save_month_base(doc_ref, base_bins, bin_width, covered_through)
-        _prune_old_months(symbol)
+        _save_quarter_base(doc_ref, base_bins, bin_width, covered_through)
+        _prune_old_quarters(symbol)
     else:
         data = doc.to_dict()
         base_bins = _deserialize_bins(data.get("bins", {}))
@@ -228,7 +234,7 @@ def _get_or_build_month_base(symbol, year, month, days_so_far):
                 print(f"[{symbol}] No bars returned for missing days {missing_days[0]}..{missing_days[-1]}")
 
         covered_through = latest_closed_str
-        _save_month_base(doc_ref, base_bins, bin_width, covered_through)
+        _save_quarter_base(doc_ref, base_bins, bin_width, covered_through)
 
     return base_bins, bin_width
 
@@ -280,8 +286,8 @@ def _compute_poc_and_value_area(hist, value_area_pct=VALUE_AREA_PCT):
 def build_volume_profile_and_price(symbol, today_bars=None):
     """
     Returns (vp, current_price) where vp is {"poc", "val", "vah"}, using
-    whichever month (current or previous) is the valid reference per the
-    ">=MIN_TRADING_DAYS_FOR_CURRENT_MONTH trading days" rule. `today_bars`
+    whichever quarter (current or previous) is the valid reference per the
+    ">=MIN_TRADING_DAYS_FOR_CURRENT_QUARTER trading days" rule. `today_bars`
     should be the raw batched download from fetch_today_bars() covering
     every symbol — this function slices out its own symbol's data
     internally. Pass None to skip today's price/shard entirely (e.g.
@@ -289,22 +295,23 @@ def build_volume_profile_and_price(symbol, today_bars=None):
     Returns None if there isn't enough data to compute anything at all.
     """
     today = datetime.datetime.now(ny_tz).date()
-    this_month_days = _trading_days_in_month(today.year, today.month, before_date=today)
+    this_quarter = _quarter_of(today)
+    this_quarter_days = _trading_days_in_quarter(today.year, this_quarter, before_date=today)
     symbol_today_bars = _extract_symbol_bars(today_bars, symbol)
 
-    if len(this_month_days) >= MIN_TRADING_DAYS_FOR_CURRENT_MONTH:
-        base, bin_width = _get_or_build_month_base(symbol, today.year, today.month, this_month_days)
+    if len(this_quarter_days) >= MIN_TRADING_DAYS_FOR_CURRENT_QUARTER:
+        base, bin_width = _get_or_build_quarter_base(symbol, today.year, this_quarter, this_quarter_days)
         if base is None:
             return None
         today_shard, current_price = _shard_from_bars(symbol_today_bars, today, bin_width)
         merged = _merge_shards([base, today_shard])
     else:
-        py, pm = _prev_month(today.year, today.month)
-        merged, bin_width = _get_or_build_month_base(symbol, py, pm, _trading_days_in_month(py, pm))
+        py, pq = _prev_quarter(today.year, this_quarter)
+        merged, bin_width = _get_or_build_quarter_base(symbol, py, pq, _trading_days_in_quarter(py, pq))
         if merged is None:
             return None
         # Today's live price is still needed for comparison even though
-        # it isn't merged into last month's already-complete reference VP.
+        # it isn't merged into last quarter's already-complete reference VP.
         _, current_price = _shard_from_bars(symbol_today_bars, today, bin_width)
 
     if not merged:
