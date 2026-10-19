@@ -41,7 +41,8 @@ def classify_platform_health(platform_results: dict) -> dict:
 
 
 def _build_admin_email_html(platform_results: dict, platform_failures: dict,
-                            unmapped_urls: list[str], bq_error: dict | None) -> str:
+                            unmapped_urls: list[str], bq_error: dict | None,
+                            auto_trigger_report: dict | None = None) -> str:
     run_time = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
 
     rows_html = ""
@@ -97,6 +98,17 @@ def _build_admin_email_html(platform_results: dict, platform_failures: dict,
         <p>Not in giftcard_catalog, so not recorded to BigQuery (alerts unaffected):</p>
         <ul>{items}</ul>"""
 
+    if auto_trigger_report and auto_trigger_report.get("issues"):
+        r = auto_trigger_report
+        counts = ", ".join(f"{k}: {v}" for k, v in sorted(r.get("status_counts", {}).items())) or "none written"
+        items = "".join(f"<li>{escape(i)}</li>" for i in r["issues"])
+        sections += f"""
+        <h3 style="color:#c0392b;margin-top:24px;">Auto trigger</h3>
+        <p>Mode: {escape(r.get('mode', '?'))} · {r.get('alerts', 0)} alerts in {r.get('groups', 0)} groups
+           · {r.get('seconds', '?')}s · results: {escape(counts)}</p>
+        <ul>{items}</ul>
+        <p style="color:#888;font-size:12px;">Affected alerts keep their previous trigger; the manual trigger is used unless a computed one is active.</p>"""
+
     return f"""
     <div style="font-family:Arial,sans-serif;max-width:680px;margin:0 auto;">
         <h2 style="color:#c0392b;">⚠️ Vigila — Platform Health Alert</h2>
@@ -120,11 +132,12 @@ def get_admin_email(db) -> str | None:
 
 
 def alert_admin_on_failure(db, platform_results: dict, unmapped_urls: list[str] | None = None,
-                           bq_error: dict | None = None) -> bool:
+                           bq_error: dict | None = None, auto_trigger_report: dict | None = None) -> bool:
     platform_failures = classify_platform_health(platform_results)
     unmapped_urls = unmapped_urls or []
+    auto_trigger_issues = bool(auto_trigger_report and auto_trigger_report.get("issues"))
 
-    if not platform_failures and not unmapped_urls and not bq_error:
+    if not platform_failures and not unmapped_urls and not bq_error and not auto_trigger_issues:
         print("[admin_diagnostic] All platforms healthy.")
         return False
 
@@ -148,9 +161,11 @@ def alert_admin_on_failure(db, platform_results: dict, unmapped_urls: list[str] 
         flagged.append("BIGQUERY")
     if unmapped_urls:
         flagged.append(f"{len(unmapped_urls)} UNMAPPED URLS")
+    if auto_trigger_issues:
+        flagged.append("AUTO TRIGGER")
     subject = f"[VIGILA ALERT] {subject_tag} — {', '.join(flagged)}"
 
-    html = _build_admin_email_html(platform_results, platform_failures, unmapped_urls, bq_error)
+    html = _build_admin_email_html(platform_results, platform_failures, unmapped_urls, bq_error, auto_trigger_report)
     msg = MIMEText(html, "html")
     msg["Subject"] = subject
     msg["From"] = SENDER_EMAIL

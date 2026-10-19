@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
 import { fetchUserVolumeSymbols, removeVolumeSymbol, type VolumeAlert } from '../APIs/StockFirestore'
 import { fetchUserVolumeProfileSymbols, removeVolumeProfileSymbol, type VolumeProfileAlert } from '../APIs/VolumeProfileFirestore'
-import { fetchAlerts, deleteAlert, toggleAlert, type GiftCardAlert } from '../APIs/GiftcardFirestore'
+import { fetchAlerts, deleteAlert, toggleAlert, fetchGiftcardPatience, saveGiftcardPatience, type GiftCardAlert, type GiftcardPatience } from '../APIs/GiftcardFirestore'
 import 'bootstrap/dist/css/bootstrap.min.css'
 import 'bootstrap/dist/js/bootstrap.bundle.min.js'
 
@@ -32,6 +32,8 @@ export interface DashboardOutletContext {
   handleToggle: (alertId: string, newValue: boolean) => Promise<void>;
   handleDelete: (alertId: string) => Promise<void>;
   alertLimitReached: boolean;
+  giftcardPatience: GiftcardPatience;
+  handleChangePatience: (patience: GiftcardPatience) => Promise<void>;
 }
 
 const Dashboard = () => {
@@ -119,6 +121,28 @@ const Dashboard = () => {
     }
   };
 
+  const [giftcardPatience, setGiftcardPatience] = useState<GiftcardPatience>("manual");
+
+  const loadPatience = async () => {
+    try {
+      setGiftcardPatience(await fetchGiftcardPatience());
+    } catch (err: any) {
+      setAlertsError(err.message || "Failed to load gift card settings.");
+    }
+  };
+
+  const handleChangePatience = async (patience: GiftcardPatience) => {
+    const previous = giftcardPatience;
+    setGiftcardPatience(patience);
+    try {
+      await saveGiftcardPatience(patience);
+      await loadAlerts();
+    } catch (err) {
+      setGiftcardPatience(previous);
+      throw err;
+    }
+  };
+
   const handleDelete = async (alertId: string) => {
     const removed = alerts.find((a) => a.id === alertId);
     setAlerts((prev) => prev.filter((a) => a.id !== alertId));
@@ -136,6 +160,7 @@ const Dashboard = () => {
     fetchSymbols();
     fetchProfileSymbols();
     loadAlerts();
+    loadPatience();
   }, []);
 
   return (
@@ -172,7 +197,8 @@ const Dashboard = () => {
         <Outlet context={{
           userSymbols, symbolsError, fetchSymbols, handleRemoveSymbol,
           userProfileSymbols, profileSymbolsError, fetchProfileSymbols, handleRemoveProfileSymbol,
-          alerts, alertsLoading, alertsError, setAlertsError, loadAlerts, handleToggle, handleDelete, alertLimitReached: alerts.length >= GIFTCARD_ALERT_LIMIT
+          alerts, alertsLoading, alertsError, setAlertsError, loadAlerts, handleToggle, handleDelete, alertLimitReached: alerts.length >= GIFTCARD_ALERT_LIMIT,
+          giftcardPatience, handleChangePatience
         } satisfies DashboardOutletContext} />
       </div>
     </div>

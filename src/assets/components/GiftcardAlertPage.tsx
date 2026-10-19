@@ -30,7 +30,8 @@ const GiftcardAlertPage = () => {
     loadAlerts,
     handleToggle,
     handleDelete,
-    alertLimitReached
+    alertLimitReached,
+    giftcardPatience
   } = useOutletContext<DashboardOutletContext>();
 
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -76,6 +77,7 @@ const GiftcardAlertPage = () => {
             <GiftcardAlertCard
               key={alert.id}
               alert={alert}
+              patience={giftcardPatience}
               onToggle={handleToggle}
               onEdit={handleEdit}
               onDelete={handleDelete}
@@ -88,6 +90,7 @@ const GiftcardAlertPage = () => {
         <CreateAlertModal
           onAddSuccess={loadAlerts}
           editingAlert={editingAlert}
+          patience={giftcardPatience}
           onClose={() => { setShowCreateModal(false); setEditingAlert(null); }}
         />
       )}
