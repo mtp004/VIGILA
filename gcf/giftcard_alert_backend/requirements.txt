@@ -3,3 +3,4 @@ uvicorn
 firebase-admin
 playwright==1.61.0
 beautifulsoup4
+google-cloud-bigquery

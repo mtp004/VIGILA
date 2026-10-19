@@ -1,11 +1,15 @@
 import os
+import uuid
 import smtplib
+from datetime import datetime, timezone
 from email.mime.text import MIMEText
 from fastapi import FastAPI, HTTPException, Response
 import firebase_admin
 from firebase_admin import firestore, auth
 from scraper_orchestrator import run_orchestrator, detect_website
 from admin_diagnostic import count_platform_results, alert_admin_on_failure
+from giftcard_catalog import load_url_to_brand
+from listing_history import build_listing_rows, write_listing_rows
 import traceback
 
 if not firebase_admin._apps:
@@ -66,6 +70,8 @@ def send_giftcard_email(to_email: str, alert_reports: list[dict]) -> bool:
 async def trigger_giftcard_alerts():
     try:
         print("\n--- STARTING GIFT CARD ALERT RUN ---")
+        run_id = str(uuid.uuid4())
+        run_ts = datetime.now(timezone.utc)
         alerts_query = db.collection_group("giftcard_alerts").stream()
         
         brand_user_alerts = {}
@@ -108,6 +114,15 @@ async def trigger_giftcard_alerts():
         })
 
         scraped_results = await run_orchestrator(all_urls, db)
+
+        # Record listing history; failures here must never block alerts
+        unmapped_urls = []
+        try:
+            rows, unmapped_urls = build_listing_rows(scraped_results, load_url_to_brand(db), run_id, run_ts)
+            bq_error = write_listing_rows(rows)
+        except Exception as e:
+            print(f"[bigquery] Failed to build listing rows: {e}")
+            bq_error = {"message": str(e), "row_count": 0}
 
         # Store results by URL
         platform_results = count_platform_results(scraped_results)
@@ -219,7 +234,7 @@ async def trigger_giftcard_alerts():
                 print(f"Failed to fetch or email user {uid}: {e}")
 
         print(f"--- RUN FINISHED: Emailed {users_emailed} users ---\n")
-        alert_admin_on_failure(db, platform_results)
+        alert_admin_on_failure(db, platform_results, unmapped_urls, bq_error)
         return {
             "status": "success",
             "brands_checked": len(brand_user_alerts),
