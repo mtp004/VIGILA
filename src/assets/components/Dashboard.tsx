@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
 import { fetchUserVolumeSymbols, removeVolumeSymbol, type VolumeAlert } from '../APIs/StockFirestore'
 import { fetchUserVolumeProfileSymbols, removeVolumeProfileSymbol, type VolumeProfileAlert } from '../APIs/VolumeProfileFirestore'
-import { fetchAlerts, deleteAlert, toggleAlert, fetchGiftcardPatience, saveGiftcardPatience, type GiftCardAlert, type GiftcardPatience } from '../APIs/GiftcardFirestore'
+import { fetchAlerts, deleteAlert, toggleAlert, fetchGiftcardPatience, saveGiftcardPatience, PENDING_AUTO_TRIGGER, type GiftCardAlert, type GiftcardPatience } from '../APIs/GiftcardFirestore'
 import 'bootstrap/dist/css/bootstrap.min.css'
 import 'bootstrap/dist/js/bootstrap.bundle.min.js'
 
@@ -135,8 +135,8 @@ const Dashboard = () => {
     const previous = giftcardPatience;
     setGiftcardPatience(patience);
     try {
-      await saveGiftcardPatience(patience);
-      await loadAlerts();
+      await saveGiftcardPatience(patience, alerts.map((a) => a.id));
+      if (patience !== "manual") setAlerts((prev) => prev.map((a) => ({ ...a, ...PENDING_AUTO_TRIGGER })));
     } catch (err) {
       setGiftcardPatience(previous);
       throw err;

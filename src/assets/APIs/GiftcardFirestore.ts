@@ -46,7 +46,7 @@ export interface GiftCardAlert {
   autoStatus?: "pending" | "collecting" | "insufficient_data" | "active" | "unmapped";
 }
 
-const PENDING_AUTO_TRIGGER = { autoStatus: "pending", computedTrigger: null };
+export const PENDING_AUTO_TRIGGER = { autoStatus: "pending", computedTrigger: null } as const;
 
 export interface AlertFormData {
   brand: string;
@@ -133,14 +133,24 @@ export const fetchGiftcardPatience = async (): Promise<GiftcardPatience> => {
   return snap.data()?.giftcardPatience ?? "manual";
 };
 
-// Marks every alert pending so the next scrape run recomputes it
-export const saveGiftcardPatience = async (patience: GiftcardPatience): Promise<void> => {
+// Marks the given alerts pending so the next scrape run recomputes them. Takes the ids
+// the caller already has to save a read; an alert missing from them is caught by the daily full recompute.
+export const saveGiftcardPatience = async (patience: GiftcardPatience, alertIds: string[]): Promise<void> => {
   const user = requireUser();
-  const batch = writeBatch(db);
-  batch.set(doc(db, "users", user.uid), { giftcardPatience: patience }, { merge: true });
-  if (patience !== "manual") {
+  const commit = (ids: string[]) => {
+    const batch = writeBatch(db);
+    batch.set(doc(db, "users", user.uid), { giftcardPatience: patience }, { merge: true });
+    if (patience !== "manual") {
+      ids.forEach((id) => batch.update(alertDoc(user.uid, id), PENDING_AUTO_TRIGGER));
+    }
+    return batch.commit();
+  };
+  try {
+    await commit(alertIds);
+  } catch (err) {
+    // An alert deleted elsewhere fails the whole batch; retry once with the current ids
+    if ((err as { code?: string }).code !== "not-found") throw err;
     const snap = await getDocs(alertsRef(user.uid));
-    snap.docs.forEach((d) => batch.update(d.ref, PENDING_AUTO_TRIGGER));
+    await commit(snap.docs.map((d) => d.id));
   }
-  await batch.commit();
 };
