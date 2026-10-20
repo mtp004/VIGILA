@@ -69,12 +69,13 @@ def send_giftcard_email(to_email: str, alert_reports: list[dict]) -> bool:
         return False
 
 
-async def recompute_auto_triggers(run_started: float) -> dict:
-    """Runs after alerts are sent, within its own time budget; never raises."""
+async def recompute_auto_triggers(run_started: float) -> tuple[dict, dict]:
+    """Runs before the alert check within its own time budget; never raises.
+    Returns (report, {alert doc path: fields written})."""
     now = time.monotonic()
     deadline = min(now + auto_trigger.RECOMPUTE_MAX_SECONDS, run_started + auto_trigger.RUN_DEADLINE_SECONDS)
     if deadline - now < auto_trigger.MIN_RECOMPUTE_SECONDS:
-        return {"mode": "skipped", "issues": [f"Skipped: run already took {round(now - run_started)}s"]}
+        return {"mode": "skipped", "issues": [f"Skipped: run already took {round(now - run_started)}s"]}, {}
     try:
         full = await asyncio.to_thread(auto_trigger.claim_full_recompute, db)
         return await asyncio.wait_for(
@@ -82,7 +83,7 @@ async def recompute_auto_triggers(run_started: float) -> dict:
             timeout=deadline - time.monotonic() + 5,
         )
     except Exception as e:
-        return {"mode": "aborted", "issues": [f"Recompute aborted: {e!r}"]}
+        return {"mode": "aborted", "issues": [f"Recompute aborted: {e!r}"]}, {}
 
 
 @app.post("/run-giftcard-alerts")
@@ -157,6 +158,14 @@ async def trigger_giftcard_alerts():
         except Exception as e:
             print(f"[auto_trigger] Failed to load user patience: {e}")
             user_patience = {}
+
+        # Recompute before the alert check so new triggers apply this run, and copy
+        # what it wrote into the alerts loaded at the start of the run
+        auto_trigger_report, recomputed = await recompute_auto_triggers(run_started)
+        for users_dict in brand_user_alerts.values():
+            for uid, alerts_map in users_dict.items():
+                for alert_id, alert_data in alerts_map.items():
+                    alert_data.update(recomputed.get(f"users/{uid}/giftcard_alerts/{alert_id}", {}))
 
         emails_to_send = {}
         updates_batch = db.batch()
@@ -261,7 +270,6 @@ async def trigger_giftcard_alerts():
                 print(f"Failed to fetch or email user {uid}: {e}")
 
         print(f"--- RUN FINISHED: Emailed {users_emailed} users ---\n")
-        auto_trigger_report = await recompute_auto_triggers(run_started)
         alert_admin_on_failure(db, platform_results, unmapped_urls, bq_error, auto_trigger_report)
         return {
             "status": "success",

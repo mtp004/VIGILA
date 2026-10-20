@@ -10,7 +10,6 @@ from collections import Counter, defaultdict
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
-from google.api_core.exceptions import FailedPrecondition
 from google.cloud import bigquery
 from firebase_admin import firestore
 
@@ -152,10 +151,12 @@ def claim_full_recompute(db) -> bool:
     return claim(db.transaction())
 
 
-def run_recompute(db, full: bool, deadline: float) -> dict:
-    """Recompute all non-manual alerts (full) or only pending ones. Returns a report; never raises."""
+def run_recompute(db, full: bool, deadline: float) -> tuple[dict, dict]:
+    """Recompute all non-manual alerts (full) or only pending ones; never raises.
+    Returns (report, {alert doc path: fields written})."""
     started = time.monotonic()
     report = {"mode": "full" if full else "pending", "alerts": 0, "groups": 0, "status_counts": {}, "issues": []}
+    written = {}
     try:
         docs = list(db.collection_group("giftcard_alerts").stream())
         patience = load_user_patience(db, [d.reference.parent.parent.id for d in docs])
@@ -167,7 +168,7 @@ def run_recompute(db, full: bool, deadline: float) -> dict:
                 targets.append((doc, data, p))
         report["alerts"] = len(targets)
         if not targets:
-            return report
+            return report, written
 
         url_to_brand = load_url_to_brand(db)
         groups, results = defaultdict(list), {}
@@ -192,24 +193,25 @@ def run_recompute(db, full: bool, deadline: float) -> dict:
                 # Every grouped alert keeps its previous values
                 report["issues"].append(f"History query failed: {e}")
 
+        # Batched writes (Firestore allows 500 per batch). An alert edited mid-recompute can
+        # get a stale result; the next full pass corrects it.
+        to_write = [doc for doc, _, _ in targets if doc.id in results]
         status_counts = Counter()
-        for doc, _, _ in targets:
-            if doc.id not in results:
-                continue
+        for i in range(0, len(to_write), 500):
             if time.monotonic() >= deadline:
                 report["issues"].append("Time budget ran out while writing; remaining alerts unchanged")
                 break
-            try:
-                # Skip alerts the user edited while we were computing
-                doc.reference.update({**results[doc.id], "computedAt": firestore.SERVER_TIMESTAMP},
-                                     option=db.write_option(last_update_time=doc.update_time))
+            batch = db.batch()
+            for doc in to_write[i:i + 500]:
+                batch.update(doc.reference, {**results[doc.id], "computedAt": firestore.SERVER_TIMESTAMP})
+            batch.commit()
+            for doc in to_write[i:i + 500]:
+                written[doc.reference.path] = results[doc.id]
                 status_counts[results[doc.id]["autoStatus"]] += 1
-            except FailedPrecondition:
-                pass
         report["status_counts"] = dict(status_counts)
     except Exception as e:
         report["issues"].append(f"Recompute failed: {e}")
     finally:
         report["seconds"] = round(time.monotonic() - started, 1)
         print(f"[auto_trigger] {report}")
-    return report
+    return report, written
