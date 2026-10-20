@@ -1,10 +1,19 @@
+import { lazy, Suspense } from 'react'
 import { createBrowserRouter, RouterProvider, Navigate } from 'react-router-dom'
-import Dashboard from './Dashboard'
 import LoginPage from './LoginPage'
 import ProtectedRoute from './ProtectedRoute'
-import StockAlertPage from './StockAlertPage'
-import GiftcardAlertPage from './GiftcardAlertPage'
-import SettingsPage from './SettingsPage'
+
+// Loaded after sign-in, so the login page doesn't download Firestore or the dashboard
+const Dashboard = lazy(() => import('./Dashboard'))
+const StockAlertPage = lazy(() => import('./StockAlertPage'))
+const GiftcardAlertPage = lazy(() => import('./GiftcardAlertPage'))
+const SettingsPage = lazy(() => import('./SettingsPage'))
+
+const loading = (
+  <div className="d-flex justify-content-center align-items-center min-vh-100">
+    <p className="text-muted">Loading...</p>
+  </div>
+)
 
 const router = createBrowserRouter([
   {
@@ -15,7 +24,9 @@ const router = createBrowserRouter([
     path: '/dashboard',
     element: (
       <ProtectedRoute>
-        <Dashboard />
+        <Suspense fallback={loading}>
+          <Dashboard />
+        </Suspense>
       </ProtectedRoute>
     ),
     children: [

@@ -1,6 +1,6 @@
 import { auth } from '../../firebase'
 import { signOut } from 'firebase/auth'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, Suspense } from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
 import { fetchUserVolumeSymbols, removeVolumeSymbol, type VolumeAlert } from '../APIs/StockFirestore'
 import { fetchUserVolumeProfileSymbols, removeVolumeProfileSymbol, type VolumeProfileAlert } from '../APIs/VolumeProfileFirestore'
@@ -194,12 +194,15 @@ const Dashboard = () => {
       </div>
 
       <div className="flex-grow-1">
-        <Outlet context={{
-          userSymbols, symbolsError, fetchSymbols, handleRemoveSymbol,
-          userProfileSymbols, profileSymbolsError, fetchProfileSymbols, handleRemoveProfileSymbol,
-          alerts, alertsLoading, alertsError, setAlertsError, loadAlerts, handleToggle, handleDelete, alertLimitReached: alerts.length >= GIFTCARD_ALERT_LIMIT,
-          giftcardPatience, handleChangePatience
-        } satisfies DashboardOutletContext} />
+        {/* Pages load on first visit; the sidebar stays put meanwhile */}
+        <Suspense fallback={null}>
+          <Outlet context={{
+            userSymbols, symbolsError, fetchSymbols, handleRemoveSymbol,
+            userProfileSymbols, profileSymbolsError, fetchProfileSymbols, handleRemoveProfileSymbol,
+            alerts, alertsLoading, alertsError, setAlertsError, loadAlerts, handleToggle, handleDelete, alertLimitReached: alerts.length >= GIFTCARD_ALERT_LIMIT,
+            giftcardPatience, handleChangePatience
+          } satisfies DashboardOutletContext} />
+        </Suspense>
       </div>
     </div>
   )
