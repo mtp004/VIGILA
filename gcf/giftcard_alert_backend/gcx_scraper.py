@@ -8,7 +8,7 @@ from playwright.async_api import async_playwright
 #     "sale_price":   sale,
 #     "savings":      round(face - sale, 2),
 GCX_SESSION_DOC = ("app_config", "gcx_session")
-GCX_SECURITY_FEE_PCT = 4.0  # GCX charges this on every purchase
+GCX_BUYER_PROTECTION_FEE = 3.0  # GCX charges this on every purchase
  
  
 def load_gcx_session(db) -> dict | None:
@@ -109,7 +109,7 @@ def parse_html_discounts(html: str) -> list[dict]:
                 
                 # 3. Clean strings and normalize into floating-point numbers
                 face = float(face_text.replace("$", "").replace(",", "").strip())
-                pct  = round(float(disc_text.replace("% OFF", "").replace("% off", "").strip()) - GCX_SECURITY_FEE_PCT, 2)
+                pct  = round(float(disc_text.replace("% OFF", "").replace("% off", "").strip()) - GCX_BUYER_PROTECTION_FEE, 2)
                 sale = float(sale_text.replace("$", "").replace(",", "").strip())
                 
                 cards.append({
