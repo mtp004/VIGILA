@@ -13,17 +13,14 @@ import {
 } from "firebase/firestore";
 
 export type GiftcardPatience = "manual" | "1m" | "3m" | "6m";
-export type AutoStatus = "pending" | "collecting" | "insufficient_data" | "active" | "unmapped";
 
-export const PATIENCE_OPTIONS: { value: GiftcardPatience; label: string; days: number }[] = [
-  { value: "manual", label: "Manual", days: 0 },
-  { value: "1m", label: "1 month", days: 30 },
-  { value: "3m", label: "3 months", days: 90 },
-  { value: "6m", label: "6 months", days: 180 },
+// historyDays: days needed before optimizing (2 x patience, see auto_trigger.py)
+export const PATIENCE_OPTIONS: { value: GiftcardPatience; label: string; historyDays: number }[] = [
+  { value: "manual", label: "Manual", historyDays: 0 },
+  { value: "1m", label: "1 month", historyDays: 60 },
+  { value: "3m", label: "3 months", historyDays: 180 },
+  { value: "6m", label: "6 months", historyDays: 360 },
 ];
-
-// Must match HISTORY_MULTIPLIER in gcf/giftcard_alert_backend/auto_trigger.py
-export const AUTO_TRIGGER_HISTORY_MULTIPLIER = 2;
 
 export interface GiftCardAlert {
   id: string;
@@ -41,15 +38,15 @@ export interface GiftCardAlert {
     carddepot: { active: boolean; highest_discount?: number };
   };
   satisfied_by: string[];
-  // Auto trigger, written by the scraper's recompute; minDiscountPercent stays the manual trigger
+  // Written by the scraper's recompute; minDiscountPercent stays the manual trigger
   computedTrigger?: number | null;
   computedAt?: Timestamp | null;
   episodes?: number | null;
   historyDays?: number | null;
-  autoStatus?: AutoStatus;
+  autoStatus?: "pending" | "collecting" | "insufficient_data" | "active" | "unmapped";
 }
 
-const PENDING_AUTO_TRIGGER = { autoStatus: "pending" as AutoStatus, computedTrigger: null };
+const PENDING_AUTO_TRIGGER = { autoStatus: "pending", computedTrigger: null };
 
 export interface AlertFormData {
   brand: string;
@@ -98,7 +95,6 @@ export const fetchAlerts = async (): Promise<GiftCardAlert[]> => {
   return snap.docs.map((d) => ({ id: d.id, ...d.data() } as GiftCardAlert));
 };
 
-// resetAutoTrigger: the brand, range or platforms changed, so any computed trigger is stale
 export const updateAlert = async (
   alertId: string,
   data: Partial<AlertFormData>,
@@ -134,11 +130,10 @@ export const toggleAlert = async (
 export const fetchGiftcardPatience = async (): Promise<GiftcardPatience> => {
   const user = requireUser();
   const snap = await getDoc(doc(db, "users", user.uid));
-  const value = snap.data()?.giftcardPatience;
-  return PATIENCE_OPTIONS.some((o) => o.value === value) ? value : "manual";
+  return snap.data()?.giftcardPatience ?? "manual";
 };
 
-// Switching to an auto option marks every alert pending so the next scrape run recomputes it
+// Marks every alert pending so the next scrape run recomputes it
 export const saveGiftcardPatience = async (patience: GiftcardPatience): Promise<void> => {
   const user = requireUser();
   const batch = writeBatch(db);

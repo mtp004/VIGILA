@@ -13,7 +13,6 @@ from admin_diagnostic import count_platform_results, alert_admin_on_failure
 from giftcard_catalog import load_url_to_brand
 from listing_history import build_listing_rows, write_listing_rows
 import auto_trigger
-from auto_trigger import effective_trigger, load_user_patience
 import traceback
 
 if not firebase_admin._apps:
@@ -38,7 +37,7 @@ def send_giftcard_email(to_email: str, alert_reports: list[dict]) -> bool:
     # 2. Build the HTML body directly from the metadata structures
     html_snippets = []
     for report in alert_reports:
-        brand_header = f"<h3>{report['brand'].upper()} (Target: {report['min_discount']}%{' auto' if report.get('auto') else ''}, Limits: ${report['min_val']} - ${report['max_val']})</h3>"
+        brand_header = f"<h3>{report['brand'].upper()} (Target: {report['min_discount']}%, Limits: ${report['min_val']} - ${report['max_val']})</h3>"
         html_snippets.append(brand_header)
         
         for site, cards_list in report["platform_groups"].items():
@@ -70,15 +69,12 @@ def send_giftcard_email(to_email: str, alert_reports: list[dict]) -> bool:
         return False
 
 
-async def recompute_auto_triggers(run_started: float) -> dict | None:
-    """Full recompute at most once per RECOMPUTE_INTERVAL_HOURS, otherwise only pending alerts.
-    Runs after alerts are sent, within its own time budget; never raises."""
+async def recompute_auto_triggers(run_started: float) -> dict:
+    """Runs after alerts are sent, within its own time budget; never raises."""
     now = time.monotonic()
     deadline = min(now + auto_trigger.RECOMPUTE_MAX_SECONDS, run_started + auto_trigger.RUN_DEADLINE_SECONDS)
     if deadline - now < auto_trigger.MIN_RECOMPUTE_SECONDS:
-        elapsed = round(now - run_started)
-        print(f"[auto_trigger] Skipped: run already took {elapsed}s")
-        return {"mode": "skipped", "issues": [f"Skipped: run already took {elapsed}s, too close to the timeout"]}
+        return {"mode": "skipped", "issues": [f"Skipped: run already took {round(now - run_started)}s"]}
     try:
         full = await asyncio.to_thread(auto_trigger.claim_full_recompute, db)
         return await asyncio.wait_for(
@@ -86,7 +82,6 @@ async def recompute_auto_triggers(run_started: float) -> dict | None:
             timeout=deadline - time.monotonic() + 5,
         )
     except Exception as e:
-        print(f"[auto_trigger] Recompute aborted: {e!r}")
         return {"mode": "aborted", "issues": [f"Recompute aborted: {e!r}"]}
 
 
@@ -156,11 +151,11 @@ async def trigger_giftcard_alerts():
             url_results[res["url"]] = {"website": res["website"], "discounts": res["discounts"]}
             print(f"[DEBUG] Scraped '{res['url']}' via {res['website']} (Found {len(res['discounts'])} cards)")
 
-        # Patience is a per-user setting; if it can't be read, alerts fall back to manual triggers
+        # If patience can't be read, alerts fall back to manual triggers
         try:
-            user_patience = load_user_patience(db, {uid for users in brand_user_alerts.values() for uid in users})
+            user_patience = auto_trigger.load_user_patience(db, {uid for users in brand_user_alerts.values() for uid in users})
         except Exception as e:
-            print(f"[auto_trigger] Failed to load user patience, using manual triggers: {e}")
+            print(f"[auto_trigger] Failed to load user patience: {e}")
             user_patience = {}
 
         emails_to_send = {}
@@ -171,14 +166,14 @@ async def trigger_giftcard_alerts():
             
             for uid, alerts_map in users_dict.items():
                 for alert_id, alert_data in alerts_map.items():
-                    min_discount, is_auto = effective_trigger(alert_data, user_patience.get(uid, "manual"))
+                    min_discount = auto_trigger.effective_trigger(alert_data, user_patience.get(uid, "manual"))
                     min_val = float(alert_data.get("minCardValue", 0))
                     max_val = float(alert_data.get("maxCardValue", 999999))
                     platforms_toggle = alert_data.get("platforms", {})
 
                     previously_satisfied = set(alert_data.get("satisfied_by", []))
                     print(f"  -> Alert ID: {alert_id} for User: {uid}")
-                    print(f"     Criteria: min_discount={min_discount}% ({'auto' if is_auto else 'manual'}), range=[${min_val}, ${max_val}]")
+                    print(f"     Criteria: min_discount={min_discount}%, range=[${min_val}, ${max_val}]")
                     print(f"     Allowed platforms toggle: {platforms_toggle}")
                     print(f"     Previously satisfied in DB: {previously_satisfied}")
                     
@@ -243,7 +238,6 @@ async def trigger_giftcard_alerts():
                         report_metadata = {
                             "brand": brand,
                             "min_discount": min_discount,
-                            "auto": is_auto,
                             "min_val": min_val,
                             "max_val": max_val,
                             "platform_groups": platform_groups,

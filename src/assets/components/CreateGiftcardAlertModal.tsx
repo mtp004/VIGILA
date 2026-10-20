@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { createAlert, updateAlert, type AlertFormData, type GiftCardAlert, type GiftcardPatience } from "../APIs/GiftcardFirestore";
+import { createAlert, updateAlert, type AlertFormData, type GiftCardAlert } from "../APIs/GiftcardFirestore";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -7,7 +7,6 @@ interface CreateAlertModalProps {
   onAddSuccess: () => void;
   onClose: () => void;
   editingAlert?: GiftCardAlert | null;
-  patience: GiftcardPatience;
 }
 
 interface FormData {
@@ -99,7 +98,6 @@ interface Step2Props {
   minCardValue: number;
   maxCardValue: number;
   minDiscountPercent: number;
-  isAuto: boolean;
   onChange: (field: string, value: number) => void;
 }
 
@@ -107,7 +105,6 @@ const Step2Criteria = ({
   minCardValue,
   maxCardValue,
   minDiscountPercent,
-  isAuto,
   onChange,
 }: Step2Props) => (
   <div>
@@ -172,11 +169,6 @@ const Step2Criteria = ({
         </div>
         <span style={{ fontSize: 13, color: "#6c757d" }}>off or more</span>
       </div>
-      {isAuto && (
-        <div className="mt-1" style={{ fontSize: 12, color: "#6c757d" }}>
-          Alert Optimization is on. This discount is used until an optimized one is available.
-        </div>
-      )}
     </div>
 
     {/* Preview */}
@@ -282,7 +274,7 @@ const Step3Platforms = ({
 
 // ─── Main Modal ───────────────────────────────────────────────────────────────
 
-// Fields the auto trigger depends on; changing any of them makes a computed trigger stale
+// Changing any of these makes an optimized trigger stale
 function autoTriggerInputsChanged(alert: GiftCardAlert, payload: AlertFormData): boolean {
   return (
     alert.brand !== payload.brand ||
@@ -294,7 +286,7 @@ function autoTriggerInputsChanged(alert: GiftCardAlert, payload: AlertFormData):
   );
 }
 
-const CreateGiftcardAlertModal = ({ onAddSuccess, onClose, editingAlert, patience }: CreateAlertModalProps) => {
+const CreateGiftcardAlertModal = ({ onAddSuccess, onClose, editingAlert }: CreateAlertModalProps) => {
   const [step, setStep] = useState(0);
   const [form, setForm] = useState<FormData>(
     editingAlert
@@ -440,7 +432,6 @@ const CreateGiftcardAlertModal = ({ onAddSuccess, onClose, editingAlert, patienc
                   minCardValue={form.minCardValue}
                   maxCardValue={form.maxCardValue}
                   minDiscountPercent={form.minDiscountPercent}
-                  isAuto={patience !== "manual"}
                   onChange={handleCriteriaChange}
                 />
               )}

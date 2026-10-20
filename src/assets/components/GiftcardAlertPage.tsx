@@ -90,7 +90,6 @@ const GiftcardAlertPage = () => {
         <CreateAlertModal
           onAddSuccess={loadAlerts}
           editingAlert={editingAlert}
-          patience={giftcardPatience}
           onClose={() => { setShowCreateModal(false); setEditingAlert(null); }}
         />
       )}

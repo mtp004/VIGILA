@@ -1,10 +1,5 @@
 import { Timestamp } from "firebase/firestore";
-import {
-  AUTO_TRIGGER_HISTORY_MULTIPLIER,
-  PATIENCE_OPTIONS,
-  type GiftCardAlert,
-  type GiftcardPatience,
-} from "../APIs/GiftcardFirestore";
+import { PATIENCE_OPTIONS, type GiftCardAlert, type GiftcardPatience } from "../APIs/GiftcardFirestore";
 
 function getBrandInitials(brand: string): string {
   return brand
@@ -125,8 +120,8 @@ function autoTriggerStatus(alert: GiftCardAlert, patience: GiftcardPatience): st
       return `Optimized to ${alert.computedTrigger}%: reached ${n} time${n === 1 ? "" : "s"} in the last ${alert.historyDays} days`;
     }
     case "collecting": {
-      const days = PATIENCE_OPTIONS.find((o) => o.value === patience)?.days ?? 0;
-      return `Collecting history (${alert.historyDays ?? 0} of ${days * AUTO_TRIGGER_HISTORY_MULTIPLIER} days), ${manual} for now`;
+      const needed = PATIENCE_OPTIONS.find((o) => o.value === patience)?.historyDays;
+      return `Collecting history (${alert.historyDays ?? 0} of ${needed} days), ${manual} for now`;
     }
     case "insufficient_data":
       return `Not enough deals in this range to auto-set, ${manual}`;
@@ -150,7 +145,7 @@ const GiftcardAlertCard = ({ alert, patience, onToggle, onEdit, onDelete }: Aler
   const satisfiedSet = new Set(alert.satisfied_by);
   const satisfiedCount = alert.satisfied_by.length;
   const isAuto = patience !== "manual";
-  const autoActive = isAuto && alert.autoStatus === "active" && alert.computedTrigger != null;
+  const autoActive = isAuto && alert.autoStatus === "active";
   const enabledPlatforms = Object.entries(alert.platforms).sort(([a], [b]) => a.localeCompare(b)).filter(([, v]) => v.active)
 
   return (

@@ -99,15 +99,11 @@ def _build_admin_email_html(platform_results: dict, platform_failures: dict,
         <ul>{items}</ul>"""
 
     if auto_trigger_report and auto_trigger_report.get("issues"):
-        r = auto_trigger_report
-        counts = ", ".join(f"{k}: {v}" for k, v in sorted(r.get("status_counts", {}).items())) or "none written"
-        items = "".join(f"<li>{escape(i)}</li>" for i in r["issues"])
+        items = "".join(f"<li>{escape(i)}</li>" for i in auto_trigger_report["issues"])
         sections += f"""
         <h3 style="color:#c0392b;margin-top:24px;">Auto trigger</h3>
-        <p>Mode: {escape(r.get('mode', '?'))} · {r.get('alerts', 0)} alerts in {r.get('groups', 0)} groups
-           · {r.get('seconds', '?')}s · results: {escape(counts)}</p>
-        <ul>{items}</ul>
-        <p style="color:#888;font-size:12px;">Affected alerts keep their previous trigger; the manual trigger is used unless a computed one is active.</p>"""
+        <p>{escape(str({k: v for k, v in auto_trigger_report.items() if k != "issues"}))}</p>
+        <ul>{items}</ul>"""
 
     return f"""
     <div style="font-family:Arial,sans-serif;max-width:680px;margin:0 auto;">

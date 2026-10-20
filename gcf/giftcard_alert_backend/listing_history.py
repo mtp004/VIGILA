@@ -28,7 +28,7 @@ def build_listing_rows(scraped_results: list[dict], url_to_brand: dict[str, str]
                 "face_value": float(card["face_value"]),
                 "discount": float(card["discount_pct"]),
             })
-    return sorted(rows, key=lambda r: (r["brand"], r["platform"])), sorted(unmapped_urls)
+    return rows, unmapped_urls
 
 
 def write_listing_rows(rows: list[dict]) -> dict | None:
