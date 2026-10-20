@@ -129,21 +129,53 @@ def _query_params(today: date, extra=()):
     ]
 
 
-RUN_DAYS_SQL = f"""
-SELECT DISTINCT DATE(run_ts, @tz) AS d
-FROM `{LISTINGS_TABLE}`
-WHERE run_ts >= @start AND DATE(run_ts, @tz) < @today
-ORDER BY d
+# One query for every group: daily best qualifying discount per group (gid >= 0),
+# plus the days the scraper ran at all (gid = -1), so the job overhead is paid once
+HISTORY_SQL = f"""
+WITH listings AS (
+  SELECT DATE(run_ts, @tz) AS d, brand, platform, face_value, discount
+  FROM `{LISTINGS_TABLE}`
+  WHERE run_ts >= @start AND DATE(run_ts, @tz) < @today
+)
+SELECT -1 AS gid, d, CAST(NULL AS FLOAT64) AS best
+FROM listings
+GROUP BY d
+UNION ALL
+SELECT g.gid, l.d,
+       MAX(IF(l.face_value BETWEEN g.min_value AND g.max_value, l.discount, NULL)) AS best
+FROM listings AS l
+JOIN UNNEST(@groups) AS g
+  ON l.brand = g.brand AND l.platform IN UNNEST(g.platforms)
+GROUP BY g.gid, l.d
 """
 
-GROUP_SQL = f"""
-SELECT DATE(run_ts, @tz) AS d,
-       MAX(IF(face_value BETWEEN @min_value AND @max_value, discount, NULL)) AS best
-FROM `{LISTINGS_TABLE}`
-WHERE run_ts >= @start AND DATE(run_ts, @tz) < @today
-  AND brand = @brand AND platform IN UNNEST(@platforms)
-GROUP BY d
-"""
+
+def _groups_param(group_keys: list) -> bigquery.ArrayQueryParameter:
+    return bigquery.ArrayQueryParameter("groups", "STRUCT", [
+        bigquery.StructQueryParameter(
+            None,
+            bigquery.ScalarQueryParameter("gid", "INT64", gid),
+            bigquery.ScalarQueryParameter("brand", "STRING", brand),
+            bigquery.ScalarQueryParameter("min_value", "FLOAT64", min_value),
+            bigquery.ScalarQueryParameter("max_value", "FLOAT64", max_value),
+            bigquery.ArrayQueryParameter("platforms", "STRING", list(platforms)),
+        )
+        for gid, (brand, min_value, max_value, platforms) in enumerate(group_keys)
+    ])
+
+
+def fetch_group_history(client, group_keys: list, today: date, timeout: float):
+    """Returns (run_days, [daily best by day for each group, in group_keys order])."""
+    job = client.query(HISTORY_SQL, job_config=bigquery.QueryJobConfig(
+        query_parameters=_query_params(today, [_groups_param(group_keys)])))
+    run_days = set()
+    group_best = [{} for _ in group_keys]
+    for row in job.result(timeout=timeout):
+        if row.gid == -1:
+            run_days.add(row.d)
+        else:
+            group_best[row.gid][row.d] = row.best
+    return sorted(run_days), group_best
 
 
 # ── Recompute ───────────────────────────────────────────────────────────────
@@ -203,35 +235,21 @@ def run_recompute(db, full: bool, deadline: float) -> dict:
         report["groups"] = len(groups)
 
         if groups:
-            client = bigquery.Client()
+            group_keys = list(groups)
             today = datetime.now(ZoneInfo(DAY_TZ)).date()
+            try:
+                run_days, group_best = fetch_group_history(
+                    bigquery.Client(), group_keys, today, timeout=max(1.0, deadline - time.monotonic()))
+            except Exception as e:
+                # Every group's alerts keep their previous values
+                report["issues"].append(f"History query failed for all {len(group_keys)} groups: {e}")
+                print(f"[auto_trigger] History query failed: {e}")
+                group_keys = []
 
-            def remaining():
-                return max(1.0, deadline - time.monotonic())
-
-            run_days_job = client.query(RUN_DAYS_SQL, job_config=bigquery.QueryJobConfig(
-                query_parameters=_query_params(today)))
-            # Start every group query up front so they run in parallel on BigQuery
-            group_jobs = {}
-            for key in groups:
-                brand, min_value, max_value, platforms = key
-                group_jobs[key] = client.query(GROUP_SQL, job_config=bigquery.QueryJobConfig(
-                    query_parameters=_query_params(today, [
-                        bigquery.ScalarQueryParameter("brand", "STRING", brand),
-                        bigquery.ScalarQueryParameter("min_value", "FLOAT64", min_value),
-                        bigquery.ScalarQueryParameter("max_value", "FLOAT64", max_value),
-                        bigquery.ArrayQueryParameter("platforms", "STRING", list(platforms)),
-                    ])))
-
-            run_days = [row.d for row in run_days_job.result(timeout=remaining())]
-
-            for key, members in groups.items():
+            for key, best in zip(group_keys, group_best if group_keys else []):
                 try:
-                    if time.monotonic() >= deadline:
-                        raise TimeoutError("time budget exhausted before this group was read")
-                    rows = group_jobs[key].result(timeout=remaining())
-                    series = build_series(run_days, {row.d: row.best for row in rows})
-                    for doc, patience in members:
+                    series = build_series(run_days, best)
+                    for doc, patience in groups[key]:
                         results[doc.id] = compute_trigger(series, PATIENCE_DAYS[patience])
                 except Exception as e:
                     # Leave this group's alerts untouched; other groups continue
