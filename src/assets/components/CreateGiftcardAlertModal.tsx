@@ -274,6 +274,18 @@ const Step3Platforms = ({
 
 // ─── Main Modal ───────────────────────────────────────────────────────────────
 
+// Changing any of these makes an optimized trigger stale
+function autoTriggerInputsChanged(alert: GiftCardAlert, payload: AlertFormData): boolean {
+  return (
+    alert.brand !== payload.brand ||
+    alert.minCardValue !== payload.minCardValue ||
+    alert.maxCardValue !== payload.maxCardValue ||
+    (Object.keys(payload.platforms) as (keyof AlertFormData["platforms"])[]).some(
+      (p) => alert.platforms[p].active !== payload.platforms[p] || alert.urls[p] !== payload.urls[p]
+    )
+  );
+}
+
 const CreateGiftcardAlertModal = ({ onAddSuccess, onClose, editingAlert }: CreateAlertModalProps) => {
   const [step, setStep] = useState(0);
   const [form, setForm] = useState<FormData>(
@@ -362,7 +374,7 @@ const CreateGiftcardAlertModal = ({ onAddSuccess, onClose, editingAlert }: Creat
       urls: form.urls,
     };
     if (editingAlert) {
-      await updateAlert(editingAlert.id, payload);
+      await updateAlert(editingAlert.id, payload, autoTriggerInputsChanged(editingAlert, payload));
     } else {
       await createAlert(payload);
     }

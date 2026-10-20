@@ -1,5 +1,5 @@
 import { Timestamp } from "firebase/firestore";
-import { type GiftCardAlert } from "../APIs/GiftcardFirestore";
+import { PATIENCE_OPTIONS, type GiftCardAlert, type GiftcardPatience } from "../APIs/GiftcardFirestore";
 
 function getBrandInitials(brand: string): string {
   return brand
@@ -112,17 +112,40 @@ const PlatformBadge = ({ platformId, enabled, satisfied, highestDiscount, url}: 
   );
 };
 
+function autoTriggerStatus(alert: GiftCardAlert, patience: GiftcardPatience): string {
+  const manual = `using your ${alert.minDiscountPercent}% trigger`;
+  switch (alert.autoStatus) {
+    case "active": {
+      const n = alert.episodes ?? 0;
+      return `Optimized to ${alert.computedTrigger}%: reached ${n} time${n === 1 ? "" : "s"} in the last ${alert.historyDays} days`;
+    }
+    case "collecting": {
+      const needed = PATIENCE_OPTIONS.find((o) => o.value === patience)?.historyDays;
+      return `Collecting history (${alert.historyDays ?? 0} of ${needed} days), ${manual} for now`;
+    }
+    case "insufficient_data":
+      return `Not enough deals in this range to auto-set, ${manual}`;
+    case "unmapped":
+      return `This brand isn't supported by Alert Optimization yet, ${manual}`;
+    default:
+      return `Optimizing at the next check, ${manual} for now`;
+  }
+}
+
 interface AlertCardProps {
   alert: GiftCardAlert;
+  patience: GiftcardPatience;
   onToggle: (alertId: string, newValue: boolean) => void;
   onEdit: (alert: GiftCardAlert) => void;
   onDelete: (alertId: string) => void;
 }
 
-const GiftcardAlertCard = ({ alert, onToggle, onEdit, onDelete }: AlertCardProps) => {
+const GiftcardAlertCard = ({ alert, patience, onToggle, onEdit, onDelete }: AlertCardProps) => {
   const initials = getBrandInitials(alert.brand);
   const satisfiedSet = new Set(alert.satisfied_by);
   const satisfiedCount = alert.satisfied_by.length;
+  const isAuto = patience !== "manual";
+  const autoActive = isAuto && alert.autoStatus === "active";
   const enabledPlatforms = Object.entries(alert.platforms).sort(([a], [b]) => a.localeCompare(b)).filter(([, v]) => v.active)
 
   return (
@@ -222,8 +245,12 @@ const GiftcardAlertCard = ({ alert, onToggle, onEdit, onDelete }: AlertCardProps
           </div>
           <div className="col-4">
             <div style={{ background: "#f8f9fa", borderRadius: 8, padding: "8px 12px" }}>
-              <div style={{ fontSize: 11, color: "#6c757d", marginBottom: 2 }}>Min discount</div>
-              <div style={{ fontSize: 13, fontWeight: 600 }}>{alert.minDiscountPercent}% off</div>
+              <div style={{ fontSize: 11, color: "#6c757d", marginBottom: 2 }}>
+                {autoActive ? "Optimized discount" : "Min discount"}
+              </div>
+              <div style={{ fontSize: 13, fontWeight: 600 }}>
+                {autoActive ? alert.computedTrigger : alert.minDiscountPercent}% off
+              </div>
             </div>
           </div>
           <div className="col-4">
@@ -233,6 +260,21 @@ const GiftcardAlertCard = ({ alert, onToggle, onEdit, onDelete }: AlertCardProps
             </div>
           </div>
         </div>
+
+        {isAuto && (
+          <div
+            className="mb-3"
+            style={{
+              fontSize: 12,
+              color: autoActive ? "#065f46" : "#6c757d",
+              background: autoActive ? "#ecfdf5" : "#f8f9fa",
+              borderRadius: 8,
+              padding: "6px 12px",
+            }}
+          >
+            {autoTriggerStatus(alert, patience)}
+          </div>
+        )}
 
         <hr style={{ margin: "0 0 12px", borderColor: "#f1f3f5" }} />
 

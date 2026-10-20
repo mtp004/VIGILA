@@ -4,6 +4,7 @@ import LoginPage from './LoginPage'
 import ProtectedRoute from './ProtectedRoute'
 import StockAlertPage from './StockAlertPage'
 import GiftcardAlertPage from './GiftcardAlertPage'
+import SettingsPage from './SettingsPage'
 
 const router = createBrowserRouter([
   {
@@ -21,7 +22,7 @@ const router = createBrowserRouter([
       { index: true, element: <Navigate to="stocks" replace /> },
       { path: 'stocks', element: <StockAlertPage /> },
       { path: 'giftcards', element: <GiftcardAlertPage /> },
-      { path: 'settings', element: <></> },
+      { path: 'settings', element: <SettingsPage /> },
     ],
   },
   {
