@@ -1,8 +1,8 @@
-"""Alert Optimization: set each alert's trigger from listing history (episode method).
+"""Alert Optimization: set each alert's trigger from listing history.
 
-An episode for discount x is a run of consecutive scrape days whose best qualifying
-discount is >= x. The trigger is the highest x whose episodes / history days meets
--ln(1 - CONFIDENCE) / T, where T is the user's patience in days.
+For every T-day window in the history (T = the user's patience in days), take the best
+discount seen in it. The trigger is the highest discount reached in at least CONFIDENCE
+of those windows: "wait T days from a random day and you'd see it 85% of the time".
 """
 import math
 import time
@@ -16,9 +16,9 @@ from firebase_admin import firestore
 from giftcard_catalog import load_url_to_brand, normalize_url
 from listing_history import LISTINGS_TABLE
 
-CONFIDENCE = 0.8
+CONFIDENCE = 0.85
 PATIENCE_DAYS = {"1m": 30, "3m": 90, "6m": 180}
-MIN_EPISODES = 3
+MIN_EPISODES = 2
 HISTORY_MULTIPLIER = 2              # need >= 2 x T scrape days of history
 RECOMPUTE_INTERVAL_HOURS = 20       # full recompute at most once per window
 RECOMPUTE_MAX_SECONDS = 120
@@ -30,6 +30,7 @@ STATE_DOC = ("app_config", "giftcard_auto_trigger")
 
 
 def count_episodes(series: list[float | None], x: float) -> int:
+    """Runs of consecutive days with best >= x; a deal that lingers counts once."""
     episodes, inside = 0, False
     for best in series:
         hit = best is not None and best >= x
@@ -44,13 +45,16 @@ def compute_trigger(series: list[float | None], patience_days: int) -> dict:
     unset = {"computedTrigger": None, "episodes": None, "historyDays": days}
     if days < HISTORY_MULTIPLIER * patience_days:
         return {**unset, "autoStatus": "collecting"}
-    rate = -math.log(1 - CONFIDENCE) / patience_days
-    for x in sorted({b for b in series if b is not None}, reverse=True):
+    # Best discount in each T-day window, highest first; a window with no deals reaches nothing
+    maxima = sorted((max((b for b in series[i:i + patience_days] if b is not None), default=-math.inf)
+                     for i in range(days - patience_days + 1)), reverse=True)
+    # Highest discount reached in at least CONFIDENCE of windows
+    reachable = maxima[math.ceil(CONFIDENCE * len(maxima) - 1e-9) - 1]
+    # Require MIN_EPISODES so a single spike can't set the trigger; lower discounts are reached even more often
+    for x in sorted({b for b in series if b is not None and b <= reachable}, reverse=True):
         episodes = count_episodes(series, x)
-        if episodes / days >= rate:
-            if episodes >= MIN_EPISODES:
-                return {"computedTrigger": x, "episodes": episodes, "historyDays": days, "autoStatus": "active"}
-            break
+        if episodes >= MIN_EPISODES:
+            return {"computedTrigger": x, "episodes": episodes, "historyDays": days, "autoStatus": "active"}
     return {**unset, "autoStatus": "insufficient_data"}
 
 
