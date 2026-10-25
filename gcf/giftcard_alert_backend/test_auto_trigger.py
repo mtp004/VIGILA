@@ -15,6 +15,7 @@ def test_series_skips_days_without_runs_and_starts_at_first_record():
     run_days = days[:2] + days[3:]                     # scraper down on day 3
     best = {days[1]: 9.0, days[4]: 7.0}                # day 1 not yet tracked; day 6 ran, no rows
     assert build_series(run_days, best) == [9.0, None, 7.0, None]
+    assert build_series(run_days, best, since=days[4]) == [7.0, None]   # lookback cutoff
 
 
 def test_window_maxima():

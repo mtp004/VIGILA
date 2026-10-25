@@ -24,7 +24,7 @@ RECOMPUTE_INTERVAL_HOURS = 20       # full recompute at most once per window
 RECOMPUTE_MAX_SECONDS = 120
 RUN_DEADLINE_SECONDS = 540          # service timeout is 600s
 MIN_RECOMPUTE_SECONDS = 30          # skip if less than this is left before the deadline
-LOOKBACK_DAYS = 549                 # the table keeps 548 days (18 months) of partitions
+LOOKBACK_DAYS = {"1m": 365, "3m": 365, "6m": 548}  # 6m needs 18 months for rare deals; others skip stale data
 DAY_TZ = "America/New_York"
 STATE_DOC = ("app_config", "giftcard_auto_trigger")
 
@@ -73,12 +73,13 @@ def compute_trigger(series: list[float | None], patience_days: int) -> dict:
     return {**unset, "autoStatus": "insufficient_data"}
 
 
-def build_series(run_days: list, group_best: dict) -> list[float | None]:
-    """Skips days with no scrape run; history starts at the group's first recorded day."""
+def build_series(run_days: list, group_best: dict, since=None) -> list[float | None]:
+    """Skips days with no scrape run; history starts at the group's first recorded day,
+    or at `since` if that is later."""
     if not group_best:
         return []
-    first_day = min(group_best)
-    return [group_best.get(d) for d in run_days if d >= first_day]
+    start = max(min(group_best), since) if since else min(group_best)
+    return [group_best.get(d) for d in run_days if d >= start]
 
 
 def load_user_patience(db, uids) -> dict[str, str]:
@@ -129,7 +130,7 @@ def fetch_group_history(client, group_keys: list, today, timeout: float):
     """Returns (sorted run days, [{day: best} for each group in group_keys order])."""
     params = [
         bigquery.ScalarQueryParameter("tz", "STRING", DAY_TZ),
-        bigquery.ScalarQueryParameter("start", "TIMESTAMP", datetime.now(timezone.utc) - timedelta(days=LOOKBACK_DAYS)),
+        bigquery.ScalarQueryParameter("start", "TIMESTAMP", datetime.now(timezone.utc) - timedelta(days=max(LOOKBACK_DAYS.values()) + 1)),
         bigquery.ScalarQueryParameter("today", "DATE", today),
         bigquery.ArrayQueryParameter("groups", "STRUCT", [
             bigquery.StructQueryParameter(
@@ -205,9 +206,11 @@ def run_recompute(db, full: bool, deadline: float) -> tuple[dict, dict]:
                 run_days, group_best = fetch_group_history(
                     bigquery.Client(), list(groups), today, timeout=max(1.0, deadline - time.monotonic()))
                 for members, best in zip(groups.values(), group_best):
-                    series = build_series(run_days, best)
+                    series = {}  # per patience: each uses its own lookback
                     for doc, p in members:
-                        results[doc.id] = compute_trigger(series, PATIENCE_DAYS[p])
+                        if p not in series:
+                            series[p] = build_series(run_days, best, since=today - timedelta(days=LOOKBACK_DAYS[p]))
+                        results[doc.id] = compute_trigger(series[p], PATIENCE_DAYS[p])
             except Exception as e:
                 # Every grouped alert keeps its previous values
                 report["issues"].append(f"History query failed: {e}")
