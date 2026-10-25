@@ -1,7 +1,8 @@
 """Run: python -m pytest test_auto_trigger.py"""
 from datetime import date, timedelta
 
-from auto_trigger import alert_group_key, build_series, compute_trigger, count_episodes, effective_trigger
+from auto_trigger import (alert_group_key, build_series, compute_trigger, count_episodes, effective_trigger,
+                          window_maxima)
 
 
 def test_lingering_deal_counts_once():
@@ -14,6 +15,12 @@ def test_series_skips_days_without_runs_and_starts_at_first_record():
     run_days = days[:2] + days[3:]                     # scraper down on day 3
     best = {days[1]: 9.0, days[4]: 7.0}                # day 1 not yet tracked; day 6 ran, no rows
     assert build_series(run_days, best) == [9.0, None, 7.0, None]
+
+
+def test_window_maxima():
+    series = [5, 9, None, 6, 7, None, 8, 5, 6, 4]
+    assert window_maxima(series, 3) == [9, 9, 7, 7, 8, 8, 8, 6]
+    assert window_maxima([None, None, 3], 2) == [float("-inf"), 3]
 
 
 def test_worked_example():

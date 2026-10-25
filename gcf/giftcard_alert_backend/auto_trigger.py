@@ -6,7 +6,7 @@ of those windows: "wait T days from a random day and you'd see it 85% of the tim
 """
 import math
 import time
-from collections import Counter, defaultdict
+from collections import Counter, defaultdict, deque
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
@@ -39,6 +39,22 @@ def count_episodes(series: list[float | None], x: float) -> int:
     return episodes
 
 
+def window_maxima(series: list[float | None], window: int) -> list[float]:
+    """Best discount in each `window`-day window, in one pass. The queue holds day indexes
+    whose values only decrease, so its front is always the current window's max."""
+    values = [-math.inf if b is None else b for b in series]
+    queue, maxima = deque(), []
+    for i, v in enumerate(values):
+        while queue and values[queue[-1]] <= v:
+            queue.pop()
+        queue.append(i)
+        if queue[0] <= i - window:
+            queue.popleft()
+        if i >= window - 1:
+            maxima.append(values[queue[0]])
+    return maxima
+
+
 def compute_trigger(series: list[float | None], patience_days: int) -> dict:
     """series: daily best qualifying discount per scrape day, oldest first (None = no deal)."""
     days = len(series)
@@ -46,8 +62,7 @@ def compute_trigger(series: list[float | None], patience_days: int) -> dict:
     if days < HISTORY_MULTIPLIER * patience_days:
         return {**unset, "autoStatus": "collecting"}
     # Best discount in each T-day window, highest first; a window with no deals reaches nothing
-    maxima = sorted((max((b for b in series[i:i + patience_days] if b is not None), default=-math.inf)
-                     for i in range(days - patience_days + 1)), reverse=True)
+    maxima = sorted(window_maxima(series, patience_days), reverse=True)
     # Highest discount reached in at least CONFIDENCE of windows
     reachable = maxima[math.ceil(CONFIDENCE * len(maxima) - 1e-9) - 1]
     # Require MIN_EPISODES so a single spike can't set the trigger; lower discounts are reached even more often
