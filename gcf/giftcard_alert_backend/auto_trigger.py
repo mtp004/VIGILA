@@ -24,7 +24,7 @@ RECOMPUTE_INTERVAL_HOURS = 20       # full recompute at most once per window
 RECOMPUTE_MAX_SECONDS = 120
 RUN_DEADLINE_SECONDS = 540          # service timeout is 600s
 MIN_RECOMPUTE_SECONDS = 30          # skip if less than this is left before the deadline
-LOOKBACK_DAYS = 366
+LOOKBACK_DAYS = 549                 # the table keeps 548 days (18 months) of partitions
 DAY_TZ = "America/New_York"
 STATE_DOC = ("app_config", "giftcard_auto_trigger")
 

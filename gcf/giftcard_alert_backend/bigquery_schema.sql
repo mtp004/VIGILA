@@ -14,4 +14,4 @@ CREATE TABLE IF NOT EXISTS `vigila-d6c82.vigila.giftcard_listings` (
 )
 PARTITION BY DATE(run_ts)
 CLUSTER BY brand, platform
-OPTIONS (partition_expiration_days = 365);
+OPTIONS (partition_expiration_days = 548);  -- 18 months
